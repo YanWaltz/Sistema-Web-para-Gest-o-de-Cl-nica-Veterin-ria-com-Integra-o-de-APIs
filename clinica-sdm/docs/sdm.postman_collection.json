@@ -1,0 +1,656 @@
+{
+  "info": {
+    "name": "SDM Clínica",
+    "description": "Inicie os serviços e execute as requisições em ordem. Dados fictícios. Para testar ViaCEP ao vivo, após o login envie GET /api/cep/01001000 com o mesmo token.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "endereco",
+      "value": ""
+    },
+    {
+      "key": "tutor",
+      "value": ""
+    },
+    {
+      "key": "especie",
+      "value": ""
+    },
+    {
+      "key": "raca",
+      "value": ""
+    },
+    {
+      "key": "vet",
+      "value": ""
+    },
+    {
+      "key": "animal",
+      "value": ""
+    },
+    {
+      "key": "chip",
+      "value": ""
+    },
+    {
+      "key": "hoje",
+      "value": ""
+    },
+    {
+      "key": "marca",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Saúde da clínica",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base}}/saude"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"usuario\": \"admin\",\n  \"senha\": \"ClinicaDemo!26\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "if(pm.response.code===200) pm.collectionVariables.set('token',pm.response.json().access_token);",
+              "const d = new Date();",
+              "pm.collectionVariables.set('hoje',new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10));",
+              "pm.collectionVariables.set('chip',Date.now().toString().padStart(15,'0'));",
+              "pm.collectionVariables.set('marca',Date.now().toString().slice(-8));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "CEP inválido",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base}}/api/cep/abc"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Endereço",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/enderecos",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cep\": \"01001000\",\n  \"logradouro\": \"Praça da Sé\",\n  \"numero\": \"10\",\n  \"bairro\": \"Sé\",\n  \"cidade\": \"São Paulo\",\n  \"uf\": \"SP\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "if(pm.response.code===201) pm.collectionVariables.set('endereco',pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tutor",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/tutores",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Tutor Demo\",\n  \"telefone\": \"2100000000\",\n  \"endereco_id\": \"{{endereco}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "if(pm.response.code===201) pm.collectionVariables.set('tutor',pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Espécie",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/especies",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Canina Demo {{marca}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "if(pm.response.code===201) pm.collectionVariables.set('especie',pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Raça",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/racas",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"SRD\",\n  \"especie_id\": \"{{especie}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "if(pm.response.code===201) pm.collectionVariables.set('raca',pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Veterinário",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/veterinarios",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Vet Demo\",\n  \"crmv\": \"DEMO-{{marca}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "if(pm.response.code===201) pm.collectionVariables.set('vet',pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Simular falha",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base}}/api/integracao/simulacao?indisponivel=true"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Criar animal na falha",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/animais",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Luna\",\n  \"tutor_id\": \"{{tutor}}\",\n  \"especie_id\": \"{{especie}}\",\n  \"raca_id\": \"{{raca}}\",\n  \"microchip\": \"{{chip}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "if(pm.response.code===201) pm.collectionVariables.set('animal',pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Microchip duplicado",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/animais",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Luna\",\n  \"tutor_id\": \"{{tutor}}\",\n  \"especie_id\": \"{{especie}}\",\n  \"raca_id\": \"{{raca}}\",\n  \"microchip\": \"{{chip}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Editar animal",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/animais/{{animal}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Luna atualizada\",\n  \"tutor_id\": \"{{tutor}}\",\n  \"especie_id\": \"{{especie}}\",\n  \"raca_id\": \"{{raca}}\",\n  \"microchip\": \"{{chip}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consulta",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/consultas",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"animal_id\": \"{{animal}}\",\n  \"veterinario_id\": \"{{vet}}\",\n  \"data\": \"{{hoje}}\",\n  \"descricao\": \"Consulta de demonstração\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vacina",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base}}/api/vacinas",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"animal_id\": \"{{animal}}\",\n  \"veterinario_id\": \"{{vet}}\",\n  \"data\": \"{{hoje}}\",\n  \"nome\": \"Antirrábica\",\n  \"lote\": \"DEMO01\",\n  \"antirrabica\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Histórico",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base}}/api/animais/{{animal}}/historico"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Restaurar governo",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base}}/api/integracao/simulacao?indisponivel=false"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reenviar",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base}}/api/integracao/reenviar"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Status e protocolos",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base}}/api/integracao"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Logout",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base}}/api/logout"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
