@@ -184,26 +184,95 @@ def cadastrar_crud(tabela, modelo, lista_sql=None, em_uso=None):
         app.add_api_route(path, func, methods=[met], status_code=status, tags=[tabela.capitalize()],
                           operation_id=f'{tabela}_{func.__name__}')
 
-
-LISTA_TUTORES = '''SELECT t.*, c.logradouro || ', ' || e.numero || ' - ' || c.cidade || '/' || c.uf AS endereco
-                   FROM tutores t JOIN enderecos e ON e.id=t.endereco_id JOIN ceps c ON c.id=e.cep_id
-                   ORDER BY t.id DESC'''
 LISTA_RACAS = '''SELECT r.*, e.nome AS especie FROM racas r JOIN especies e ON e.id=r.especie_id ORDER BY r.id DESC'''
 EM_USO = "SELECT COUNT(*) FROM animais WHERE {}=? AND situacao='ATIVO'"
 
-cadastrar_crud('tutores', m.Tutor, LISTA_TUTORES, EM_USO.format('tutor_id'))
+
 cadastrar_crud('especies', m.Especie, em_uso=EM_USO.format('especie_id'))
 cadastrar_crud('racas', m.Raca, LISTA_RACAS, EM_USO.format('raca_id'))
 
-
 # ================================================================ endereços (3.3)
-# O CEP (logradouro, bairro, cidade, UF, IBGE) é gravado uma única vez em "ceps". Cada endereço guarda só
-# o número e o complemento, e endereços idênticos são reaproveitados: milhares de moradores do mesmo CEP
-# não geram milhares de cópias dos mesmos dados.
-VISAO_ENDERECO = '''SELECT e.id, c.cep, c.logradouro, e.numero, NULLIF(e.complemento,'') AS complemento,
-                    c.bairro, c.cidade, c.uf, c.codigo_ibge, e.cep_id
-                    FROM enderecos e JOIN ceps c ON c.id=e.cep_id'''
+# O endereço NÃO é um cadastro à parte: ele é informado junto com o tutor.
+# O CEP é gravado uma única vez em "ceps" e endereços iguais são reaproveitados.
+def obter_endereco(c, dados):
+    """Devolve o id do endereço, criando CEP e endereço só se ainda não existirem (get-or-create)."""
+    cep = so_digitos(dados.cep)
+    complemento = (dados.complemento or '').strip()
+    r = c.execute('SELECT id FROM ceps WHERE cep=?', (cep,)).fetchone()
+    if r:  # CEP já conhecido: reaproveita os dados guardados
+        cep_id = r['id']
+    else:
+        faltam = [k for k in ('logradouro', 'bairro', 'cidade', 'uf') if not getattr(dados, k)]
+        if faltam:
+            raise HTTPException(422, 'CEP ainda não cadastrado: informe ' + ', '.join(faltam)
+                                + ' (ou use a consulta ao ViaCEP).')
+        cep_id = c.execute('INSERT INTO ceps(cep,logradouro,bairro,cidade,uf,codigo_ibge) VALUES (?,?,?,?,?,?)',
+                           (cep, dados.logradouro, dados.bairro, dados.cidade, dados.uf, dados.codigo_ibge)).lastrowid
+    e = c.execute('SELECT id FROM enderecos WHERE cep_id=? AND numero=? AND complemento=?',
+                  (cep_id, dados.numero, complemento)).fetchone()
+    if e:
+        return e['id']
+    return c.execute('INSERT INTO enderecos(cep_id,numero,complemento) VALUES (?,?,?)',
+                     (cep_id, dados.numero, complemento)).lastrowid
 
+
+# ================================================================ tutores (3.2)
+SQL_TUTOR = '''SELECT t.id, t.nome, t.cpf, t.data_nascimento, t.email, t.telefone, t.data_cadastro, t.situacao,
+                t.endereco_id, c.cep, c.logradouro, e.numero, NULLIF(e.complemento,'') AS complemento,
+                c.bairro, c.cidade, c.uf, c.codigo_ibge,
+                c.logradouro || ', ' || e.numero || ' - ' || c.cidade || '/' || c.uf AS endereco
+                FROM tutores t JOIN enderecos e ON e.id=t.endereco_id JOIN ceps c ON c.id=e.cep_id'''
+
+
+def tutor_completo(c, id):
+    r = c.execute(SQL_TUTOR + ' WHERE t.id=?', (id,)).fetchone()
+    if r is None:
+        raise HTTPException(404, 'Registro não encontrado.')
+    return dict(r)
+
+
+@app.get('/api/tutores', tags=['Tutores'])
+def listar_tutores(u=Depends(sessao)):
+    with db() as c:
+        return [dict(x) for x in c.execute(SQL_TUTOR + ' ORDER BY t.id DESC')]
+
+
+@app.get('/api/tutores/{id}', tags=['Tutores'])
+def consultar_tutor(id: int, u=Depends(sessao)):
+    with db() as c:
+        return tutor_completo(c, id)
+
+
+@app.post('/api/tutores', status_code=201, tags=['Tutores'])
+def criar_tutor(dados: m.Tutor, u=Depends(sessao)):
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        campos = valores(dados)
+        campos.pop('endereco')
+        campos['endereco_id'] = obter_endereco(c, dados.endereco)
+        return tutor_completo(c, inserir(c, 'tutores', campos))
+
+
+@app.put('/api/tutores/{id}', tags=['Tutores'])
+def editar_tutor(id: int, dados: m.Tutor, u=Depends(sessao)):
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        item(c, 'tutores', id)
+        campos = valores(dados)
+        campos.pop('endereco')
+        campos['endereco_id'] = obter_endereco(c, dados.endereco)
+        atualizar(c, 'tutores', id, campos)
+        return tutor_completo(c, id)
+
+
+@app.delete('/api/tutores/{id}', status_code=204, tags=['Tutores'])
+def inativar_tutor(id: int, u=Depends(sessao)):
+    with db() as c:
+        item(c, 'tutores', id)
+        if c.execute(EM_USO.format('tutor_id'), (id,)).fetchone()[0]:
+            raise HTTPException(409, 'Há animais ativos vinculados a este cadastro. Inative-os primeiro.')
+        c.execute("UPDATE tutores SET situacao='INATIVO' WHERE id=?", (id,))
+    return Response(status_code=204)
 
 @app.get('/api/enderecos', tags=['Enderecos'])
 def listar_enderecos(u=Depends(sessao)):

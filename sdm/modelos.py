@@ -98,7 +98,22 @@ class VeterinarioNovo(VeterinarioBase):
 class VeterinarioEdicao(VeterinarioBase):
     situacao: Optional[Situacao] = None
 
+class EnderecoNovo(Entrada):
+    cep: str = Field(pattern=r'^\d{5}-?\d{3}$')
+    numero: str = Field(min_length=1, max_length=20)
+    complemento: Optional[str] = Field(default=None, max_length=120)
+    # Os campos abaixo só são obrigatórios quando o CEP ainda não está na base
+    # (preenchidos pelo ViaCEP ou manualmente).
+    logradouro: Optional[str] = Field(default=None, max_length=120)
+    bairro: Optional[str] = Field(default=None, max_length=100)
+    cidade: Optional[str] = Field(default=None, max_length=100)
+    uf: Optional[str] = Field(default=None, min_length=2, max_length=2)
+    codigo_ibge: Optional[str] = Field(default=None, pattern=r'^\d{7}$')
 
+    @field_validator('uf')
+    @classmethod
+    def _uf_ok(cls, v):
+        return _uf(v)
 # ---------------------------------------------------------------- tutor, endereço e catálogos
 class Tutor(Entrada):
     nome: str = Field(min_length=3, max_length=150)
@@ -106,7 +121,7 @@ class Tutor(Entrada):
     data_nascimento: date
     email: str = Field(pattern=EMAIL, max_length=120)
     telefone: str = Field(min_length=8, max_length=24)
-    endereco_id: int = Field(gt=0)
+    endereco: EnderecoNovo
     situacao: Optional[Situacao] = None
 
     @field_validator('cpf')
@@ -127,22 +142,7 @@ class Tutor(Entrada):
         return v.lower()
 
 
-class EnderecoNovo(Entrada):
-    cep: str = Field(pattern=r'^\d{5}-?\d{3}$')
-    numero: str = Field(min_length=1, max_length=20)
-    complemento: Optional[str] = Field(default=None, max_length=120)
-    # Os campos abaixo só são obrigatórios quando o CEP ainda não está na base
-    # (preenchidos pelo ViaCEP ou manualmente).
-    logradouro: Optional[str] = Field(default=None, max_length=120)
-    bairro: Optional[str] = Field(default=None, max_length=100)
-    cidade: Optional[str] = Field(default=None, max_length=100)
-    uf: Optional[str] = Field(default=None, min_length=2, max_length=2)
-    codigo_ibge: Optional[str] = Field(default=None, pattern=r'^\d{7}$')
 
-    @field_validator('uf')
-    @classmethod
-    def _uf_ok(cls, v):
-        return _uf(v)
 
 
 class Especie(Entrada):

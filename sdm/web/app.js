@@ -206,19 +206,19 @@ async function historico(id) {
 
 // ------------------------------------------------------------------ cadastros
 const CAD = {
-  tutores: { titulo: 'Tutores', cols: ['id', 'nome', 'cpf', 'email', 'telefone', 'endereco', 'situacao'] },
-  enderecos: { titulo: 'Endereços', cols: ['id', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'codigo_ibge'] },
+  tutores: { titulo: 'Tutores', cols: ['id', 'nome', 'cpf', 'email', 'telefone', 'endereco', 'cep', 'situacao'] },
+
   especies: { titulo: 'Espécies', cols: ['id', 'nome', 'descricao', 'situacao'] },
   racas: { titulo: 'Raças', cols: ['id', 'nome', 'especie', 'situacao'] },
   veterinarios: { titulo: 'Veterinários', cols: ['id', 'nome', 'cpf', 'crmv', 'email', 'senha_confirmada', 'situacao', 'ultimo_acesso'] }
 };
 async function cadastros(tab, v = ++epoch) {
   const rows = await api('/' + tab); if (v !== epoch) return;
-  start('Cadastros', tab === 'enderecos' ? 'Cada CEP é guardado uma só vez; endereços iguais são reaproveitados (não há edição nem exclusão).' : 'Exclusão é lógica: o cadastro fica INATIVO e o histórico é preservado.');
+  start('Cadastros', 'Exclusão é lógica: o cadastro fica INATIVO e o histórico é preservado.');
   const sub = node('div', null, 'toolbar');
   for (const k of Object.keys(CAD)) { const b = btn(CAD[k].titulo, () => cadastros(k)); if (k === tab) b.setAttribute('aria-current', 'page'); sub.append(b); }
   screen.append(sub, (() => { const b = node('div', null, 'toolbar'); b.append(btn('Novo cadastro', () => formCadastro(tab, null), '')); return b; })());
-  screen.append(table(rows, CAD[tab].cols, tab === 'enderecos' ? null : (r) => {
+  screen.append(table(rows, CAD[tab].cols, (r) => {
     const s = node('div', null, 'toolbar'); s.append(btn('Editar', () => formCadastro(tab, r)));
     if (r.situacao === 'ATIVO') s.append(btn('Inativar', async () => { await api(`/${tab}/${r.id}`, 'DELETE'); await cadastros(tab); }, 'danger'));
     return s;
@@ -228,12 +228,7 @@ async function formCadastro(tab, r) {
   start((r ? 'Editar ' : 'Novo ') + CAD[tab].titulo.toLowerCase());
   const volta = () => cadastros(tab);
   let campos;
-  if (tab === 'tutores') {
-    const ends = (await api('/enderecos')).map(e => [e.id, `${e.logradouro}, ${e.numero}${e.complemento ? ' ' + e.complemento : ''} — ${e.cidade}/${e.uf} (${e.cep})`]);
-    campos = [['nome', 'Nome'], ['cpf', 'CPF'], ['data_nascimento', 'Data de nascimento', 'date'], ['email', 'E-mail', 'email'], ['telefone', 'Telefone'], ['endereco_id', 'Endereço', 'select', ends]];
-    if (r) campos.push(['situacao', 'Situação', 'select', [['ATIVO', 'Ativo'], ['INATIVO', 'Inativo']]]);
-    screen.append(node('p', 'Não achou o endereço? Cadastre-o primeiro em Cadastros › Endereços (o CEP é preenchido pelo ViaCEP).', 'muted'));
-  } else if (tab === 'enderecos') return formEndereco();
+  if (tab === 'tutores') return formTutor(r);
   else if (tab === 'especies') campos = [['nome', 'Nome'], ['descricao', 'Descrição', 'textarea']];
   else if (tab === 'racas') campos = [['nome', 'Nome'], ['descricao', 'Descrição', 'textarea'], ['especie_id', 'Espécie', 'select', await opcoes('especies', e => e.nome)]];
   else {
@@ -252,17 +247,25 @@ async function formCadastro(tab, r) {
     msg('Salvo com sucesso.'); await volta();
   }, volta));
 }
-async function formEndereco() {
-  start('Novo endereço', 'Digite o CEP e use "Buscar no ViaCEP". Se o ViaCEP estiver fora do ar ou o CEP não existir, preencha manualmente.');
-  const campos = [['cep', 'CEP'], ['numero', 'Número'], ['complemento', 'Complemento'], ['logradouro', 'Logradouro'], ['bairro', 'Bairro'], ['cidade', 'Cidade'], ['uf', 'UF'], ['codigo_ibge', 'Código IBGE']];
-  const f = await formulario(campos, null, async (d) => {
-    const r = await api('/enderecos', 'POST', d);
-    msg(r.reaproveitado ? 'Este endereço já existia: foi reaproveitado, sem duplicar.' : 'Endereço cadastrado.'); await cadastros('enderecos');
-  }, () => cadastros('enderecos'));
-  const busca = btn('Buscar no ViaCEP', async () => {
+// O endereço é digitado junto com o tutor: não existe cadastro nem lista de endereços.
+async function formTutor(r) {
+  start(r ? 'Editar tutor' : 'Novo tutor', 'Informe o CEP e use "Buscar no ViaCEP". Se o ViaCEP estiver fora do ar ou o CEP não existir, preencha o endereço manualmente.');
+  const campos = [['nome', 'Nome'], ['cpf', 'CPF'], ['data_nascimento', 'Data de nascimento', 'date'], ['email', 'E-mail', 'email'], ['telefone', 'Telefone'],
+    ['cep', 'CEP'], ['numero', 'Número'], ['complemento', 'Complemento'], ['logradouro', 'Logradouro'], ['bairro', 'Bairro'],
+    ['cidade', 'Cidade'], ['uf', 'UF'], ['codigo_ibge', 'Código IBGE']];
+  if (r) campos.push(['situacao', 'Situação', 'select', [['ATIVO', 'Ativo'], ['INATIVO', 'Inativo']]]);
+  const volta = () => cadastros('tutores');
+  const f = await formulario(campos, r, async (d) => {
+    const tutor = { nome: d.nome, cpf: d.cpf, data_nascimento: d.data_nascimento, email: d.email, telefone: d.telefone, situacao: d.situacao,
+      endereco: { cep: d.cep, numero: d.numero, complemento: d.complemento, logradouro: d.logradouro, bairro: d.bairro, cidade: d.cidade, uf: d.uf, codigo_ibge: d.codigo_ibge } };
+    if (!r) delete tutor.situacao;
+    if (r) await api('/tutores/' + r.id, 'PUT', tutor); else await api('/tutores', 'POST', tutor);
+    msg('Tutor salvo com sucesso.'); await volta();
+  }, volta);
+  const busca = btn('Buscar CEP no ViaCEP', async () => {
     const cep = f.elements.cep.value.trim(); if (!cep) throw Error('Informe o CEP.');
-    const r = await api('/cep/' + encodeURIComponent(cep));
-    for (const k of ['logradouro', 'bairro', 'cidade', 'uf', 'codigo_ibge']) f.elements[k].value = r[k] || '';
+    const x = await api('/cep/' + encodeURIComponent(cep));
+    for (const k of ['logradouro', 'bairro', 'cidade', 'uf', 'codigo_ibge']) f.elements[k].value = x[k] || '';
     msg('Endereço preenchido pelo ViaCEP. Complete o número.');
   });
   f.querySelector('.toolbar').prepend(busca);
