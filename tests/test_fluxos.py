@@ -10,9 +10,8 @@ import unittest
 from datetime import date, timedelta
 from unittest.mock import patch
 import httpx
-from fastapi.testclient import TestClient
 from sdm.base import GOV_KEY
-from sdm.clinica import app, buscar_cep
+from sdm.clinica import buscar_cep
 from fastapi import HTTPException
 
 
@@ -28,7 +27,7 @@ class Integrado(unittest.TestCase):
         pr,pg=porta(),porta()
         while pr==pg: pg=porta()
         cls.url=f'http://127.0.0.1:{pr}'; cls.gov=f'http://127.0.0.1:{pg}'
-        env=os.environ | {'SDM_DATA_DIR':cls.tmp.name,'SDM_GOV_URL':cls.gov,'SDM_GOV_KEY':GOV_KEY,'SDM_ADMIN_PASSWORD':'ClinicaDemo!26','SDM_CLINIC_PASSWORD':'ClinicaDemo!26'}
+        env=os.environ | {'SDM_DATA_DIR':cls.tmp.name,'SDM_GOV_URL':cls.gov,'SDM_GOV_KEY':GOV_KEY,'SDM_DEMO_PASSWORD':'ClinicaDemo!26'}
         for modulo,p,url in [('governo',pg,cls.gov),('clinica',pr,cls.url)]:
             proc=subprocess.Popen([sys.executable,'-m','uvicorn',f'sdm.{modulo}:app','--port',str(p),'--log-level','warning'],env=env)
             cls.addClassCleanup(cls.fechar,proc)
@@ -48,100 +47,235 @@ class Integrado(unittest.TestCase):
         try: proc.wait(timeout=5)
         except subprocess.TimeoutExpired: proc.kill(); proc.wait()
 
-    def call(self,m,path,code,body=None,auth=None):
-        r=self.client.request(m,path,json=body,headers=auth)
-        self.assertEqual(r.status_code,code,r.text)
+    def call(self, m, path, code, body=None, auth=None, headers=None):
+        r = self.client.request(m, path, json=body, headers=(auth or {}) | (headers or {}))
+        self.assertEqual(r.status_code, code, r.text)
         return r.json() if r.content else None
 
-    def login(self,user='admin'):
-        x=self.call('POST','/api/login',200,{'usuario':user,'senha':'ClinicaDemo!26'})
-        return {'Authorization':'Bearer '+x['access_token']}
+    def login(self, email='demo@clinica.local', senha='ClinicaDemo!26'):
+        x = self.call('POST', '/api/auth/login', 200, {'email': email, 'senha': senha})
+        return {'Authorization': 'Bearer ' + x['access_token']}
 
-    def test_01_acesso_documentacao_e_interface(self):
-        self.assertIn('Entre para começar',self.client.get('/').text)
-        self.assertIn('async function integracao',self.client.get('/web/app.js').text)
-        self.assertIn('stylesheet',self.client.get('/').text)
-        self.assertEqual(self.client.get('/docs').status_code,200)
-        spec=self.call('GET','/openapi.json',200)
-        self.assertIn('HTTPBearer',spec['components']['securitySchemes'])
-        self.assertIn('/vacinas-antirrabicas',self.remote.get('/openapi.json').json()['paths'])
-        self.call('GET','/api/animais',401)
-        self.call('POST','/api/login',401,{'usuario':'admin','senha':'senha-errada'})
-        perfil=self.login('clinica')
-        self.call('DELETE','/api/especies/1',403,auth=perfil)
-        self.call('POST','/api/integracao/reenviar',403,auth=perfil)
-        self.call('POST','/api/logout',204,auth=perfil)
-        self.call('GET','/api/me',401,auth=perfil)
+    def esperar(self, auth, animal_id, situacao, n=1):
+        for _ in range(80):
+            ops = self.call('GET', f'/api/integracao?animal_id={animal_id}', 200, auth=auth)
+            if len([o for o in ops if o['situacao'] == situacao]) >= n:
+                return ops
+            time.sleep(.1)
+        self.fail(f'Esperava {n} operação(ões) {situacao}: {ops}')
 
-    def test_02_fluxo_clinico_e_reenvio(self):
-        a=self.login(); call=lambda m,p,s,b=None:self.call(m,'/api'+p,s,b,a)
-        e=call('POST','/enderecos',201,{'cep':'01001-000','logradouro':'Praça da Sé','numero':'10','bairro':'Sé','cidade':'São Paulo','uf':'SP'})
-        tutor=call('POST','/tutores',201,{'nome':'Tutor fictício','telefone':'2100000000','endereco_id':e['id']})
-        esp=call('POST','/especies',201,{'nome':'Canina'}); fel=call('POST','/especies',201,{'nome':'Felina'})
-        raca=call('POST','/racas',201,{'nome':'SRD','especie_id':esp['id']})
-        vet=call('POST','/veterinarios',201,{'nome':'Veterinário fictício','crmv':'DEMO-001'})
-        vet2=call('POST','/veterinarios',201,{'nome':'Cadastro temporário','crmv':'DEMO-002'})
-        call('PUT',f"/veterinarios/{vet2['id']}",200,{'nome':'Alterado','crmv':'DEMO-002'})
-        call('GET',f"/veterinarios/{vet2['id']}",200);call('DELETE',f"/veterinarios/{vet2['id']}",204)
-        call('DELETE',f"/enderecos/{e['id']}",409)
-        payload={'nome':'Luna','nascimento':'2022-01-01','tutor_id':tutor['id'],'especie_id':esp['id'],'raca_id':raca['id'],'microchip':'000000000000123'}
-        call('POST','/animais',409,payload|{'especie_id':fel['id']})
-        call('POST','/animais',422,payload|{'microchip':'ABCDEFGHIJKLMNO'})
-        call('PUT','/integracao/simulacao?indisponivel=true',200)
-        animal=call('POST','/animais',201,payload); id=animal['id']; day=date.today().isoformat()
-        call('POST','/animais',409,payload|{'nome':'Outro'})
-        self.assertEqual(call('GET','/animais?q=000000000000123',200)[0]['id'],id)
-        call('POST','/consultas',422,{'animal_id':id,'veterinario_id':vet['id'],'data':(date.today()+timedelta(days=1)).isoformat(),'descricao':'Não deve entrar'})
-        call('POST','/consultas',201,{'animal_id':id,'veterinario_id':vet['id'],'data':day,'descricao':'Consulta de demonstração'})
-        regular={'animal_id':id,'veterinario_id':vet['id'],'data':day,'nome':'Vacina de demonstração','lote':'D01'}
-        call('POST','/vacinas',201,regular);call('POST','/vacinas',201,regular|{'nome':'Antirrábica','antirrabica':True})
-        h=call('GET',f'/animais/{id}/historico',200);self.assertEqual((len(h['consultas']),len(h['vacinas'])),(1,2))
-        call('PUT',f'/animais/{id}',200,payload|{'nome':'Luna Atualizada'})
-        ops=call('GET','/integracao',200);self.assertEqual(len(ops),3)
-        for _ in range(40):
-            ops=call('GET','/integracao',200)
-            if any(x['status']=='FALHA' for x in ops): break
-            time.sleep(.05)
-        self.assertTrue(any(x['status']=='FALHA' for x in ops))
-        self.assertEqual(self.remote.get('/registros').json(),{'animais':[],'vacinas':[]})
-        call('PUT','/integracao/simulacao?indisponivel=false',200)
-        call('POST','/integracao/reenviar',200)
-        ops=call('GET','/integracao',200);self.assertTrue(all(x['status']=='ENVIADO' and x['protocolo'].startswith('GOV-') for x in ops))
-        self.assertEqual(call('POST','/integracao/reenviar',200)['enviadas'],0)
-        governo=self.remote.get('/registros').json();self.assertEqual(len(governo['vacinas']),1)
-        self.assertEqual(governo['animais'][0]['nome'],'Luna Atualizada')
-        self.assertNotIn('tutor_id',governo['animais'][0])
-        call('DELETE',f'/animais/{id}',204);self.assertEqual(call('GET',f'/animais/{id}',200)['ativo'],0)
-        call('POST','/vacinas',409,regular)
-        print('EVIDÊNCIA: animal e vacina gravados localmente durante HTTP 503; três operações reenviadas com protocolo; segundo reenvio não duplicou registros.',flush=True)
+    # ---------- 1. acesso
+    def test_01_login_e_protecao(self):
+        self.assertIn('Entre', self.client.get('/').text)
+        self.assertEqual(self.client.get('/docs').status_code, 200)
+        self.call('GET', '/api/animais', 401)
+        self.call('POST', '/api/auth/login', 401, {'email': 'demo@clinica.local', 'senha': 'errada123'})
+        self.call('POST', '/api/auth/login', 401, {'email': 'naoexiste@x.com', 'senha': 'qualquer123'})
+        a = self.login()
+        self.assertEqual(self.call('GET', '/api/auth/me', 200, auth=a)['email'], 'demo@clinica.local')
+        self.call('POST', '/api/auth/logout', 204, auth=a)
+        self.call('GET', '/api/auth/me', 401, auth=a)
 
-    def test_03_idempotencia_remota(self):
-        payload={'animal_id':900,'versao':1,'nome':'Teste remoto','especie':'Canina','microchip':'999999999999999','ativo':True}
-        h={'Idempotency-Key':'teste-idempotencia-900'}
-        a=self.remote.put('/animais/900',json=payload,headers=h);b=self.remote.put('/animais/900',json=payload,headers=h)
-        self.assertEqual((a.status_code,b.status_code),(200,200));self.assertFalse(a.json()['repetido']);self.assertTrue(b.json()['repetido']);self.assertEqual(a.json()['protocolo'],b.json()['protocolo'])
-        self.assertEqual(self.remote.put('/animais/900',json=payload|{'nome':'Outra carga'},headers=h).status_code,409)
-        self.assertEqual(httpx.get(self.gov+'/registros').status_code,401)
-        print('EVIDÊNCIA: repetição da chave devolveu o mesmo protocolo; carga diferente com a mesma chave foi rejeitada.',flush=True)
+    def test_02_veterinario_cpf_confirmacao_e_bloqueios(self):
+        a = self.login()
+        vet = {'nome': 'Vet Novo', 'cpf': '529.982.247-25', 'crmv_numero': '777', 'crmv_uf': 'sp',
+               'email': 'novo@clinica.local', 'senha': 'SenhaForte123'}
+        self.call('POST', '/api/auth/registro', 422, vet | {'cpf': '111.111.111-11'})
+        self.call('POST', '/api/auth/registro', 422, vet | {'cpf': '529.982.247-24'})
+        r = self.call('POST', '/api/auth/registro', 201, vet)
+        # CPF, e-mail e CRMV+UF são únicos
+        self.call('POST', '/api/auth/registro', 409, vet | {'email': 'outro@clinica.local', 'crmv_numero': '778'})
+        self.call('POST', '/api/auth/registro', 409, vet | {'cpf': '39053344705', 'crmv_numero': '779'})
+        # senha não confirmada: não entra
+        self.call('POST', '/api/auth/login', 403, {'email': 'novo@clinica.local', 'senha': 'SenhaForte123'})
+        self.call('POST', '/api/auth/confirmar', 400, {'email': 'novo@clinica.local', 'codigo': '000000'}) \
+            if r['codigo_confirmacao_simulado'] != '000000' else None
+        self.call('POST', '/api/auth/confirmar', 200, {'email': 'novo@clinica.local', 'codigo': r['codigo_confirmacao_simulado']})
+        novo = self.login('novo@clinica.local', 'SenhaForte123')
+        vets = self.call('GET', '/api/veterinarios', 200, auth=a)
+        mine = [v for v in vets if v['email'] == 'novo@clinica.local'][0]
+        self.assertNotIn('senha_hash', mine)
+        self.assertEqual(mine['cpf'], '52998224725')
+        self.assertTrue(mine['senha_confirmada'] and mine['data_confirmacao'] and mine['ultimo_acesso'])
+        # inativo: não entra e a sessão aberta cai
+        self.call('DELETE', f"/api/veterinarios/{mine['id']}", 204, auth=a)
+        self.call('GET', '/api/auth/me', 401, auth=novo)
+        self.call('POST', '/api/auth/login', 403, {'email': 'novo@clinica.local', 'senha': 'SenhaForte123'})
+
+    # ---------- 2. tutor, CPF e endereço
+    def test_03_tutor_cpf_e_endereco_sem_duplicar(self):
+        a = self.login()
+        end = {'cep': '20040-020', 'numero': '10', 'logradouro': 'Rua Teste', 'bairro': 'Centro', 'cidade': 'Rio de Janeiro',
+               'uf': 'RJ', 'codigo_ibge': '3304557'}
+        e1 = self.call('POST', '/api/enderecos', 201, end, a)
+        # mesmo CEP em outro número: não repete os dados do CEP; só informe o número
+        e2 = self.call('POST', '/api/enderecos', 201, {'cep': '20040020', 'numero': '20'}, a)
+        self.assertEqual((e1['cep_id'], e2['logradouro']), (e2['cep_id'], 'Rua Teste'))
+        self.assertNotEqual(e1['id'], e2['id'])
+        # mesmo CEP + número + complemento: reaproveita o registro
+        e3 = self.call('POST', '/api/enderecos', 201, {'cep': '20040020', 'numero': '10'}, a)
+        self.assertEqual(e3['id'], e1['id'])
+        self.assertTrue(e3['reaproveitado'])
+        self.call('POST', '/api/enderecos', 422, {'cep': '30130-010', 'numero': '1'}, a)  # CEP novo exige dados
+        t = {'nome': 'Maria Tutora', 'cpf': '390.533.447-05', 'data_nascimento': '1990-05-10', 'email': 'MARIA@x.com',
+             'telefone': '21999990001', 'endereco_id': e1['id']}
+        self.call('POST', '/api/tutores', 422, t | {'cpf': '123.456.789-00'}, a)
+        self.call('POST', '/api/tutores', 422, t | {'cpf': '000.000.000-00'}, a)
+        ok = self.call('POST', '/api/tutores', 201, t, a)
+        self.assertEqual((ok['cpf'], ok['situacao'], ok['email']), ('39053344705', 'ATIVO', 'maria@x.com'))
+        self.assertTrue(ok['data_cadastro'])
+        self.call('POST', '/api/tutores', 409, t | {'cpf': '39053344705', 'nome': 'Outra Pessoa'}, a)
+        # dois tutores moram no mesmo endereço: só existe UM endereço no banco
+        t2 = self.call('POST', '/api/tutores', 201, t | {'cpf': '52998224725', 'email': 'b@x.com'}, a)
+        self.assertEqual(t2['endereco_id'], ok['endereco_id'])
+        n = [x for x in self.call('GET', '/api/enderecos', 200, auth=a) if x['cep'] == '20040020' and x['numero'] == '10']
+        self.assertEqual(len(n), 1)
+        self.call('DELETE', f"/api/tutores/{t2['id']}", 204, auth=a)
+        self.assertEqual(self.call('GET', f"/api/tutores/{t2['id']}", 200, auth=a)['situacao'], 'INATIVO')
+
+    # ---------- 3. animais, raça/espécie, microchip e histórico
+    def test_04_animais_microchip_e_historico(self):
+        a = self.login()
+        e = self.call('POST', '/api/enderecos', 201, {'cep': '01001-000', 'numero': '1', 'logradouro': 'Praça da Sé',
+                      'bairro': 'Sé', 'cidade': 'São Paulo', 'uf': 'SP'}, a)
+        tutor = self.call('POST', '/api/tutores', 201, {'nome': 'Tutor Animais', 'cpf': '11144477735', 'data_nascimento': '1985-01-01',
+                          'email': 't@x.com', 'telefone': '1100000000', 'endereco_id': e['id']}, a)
+        cao = self.call('POST', '/api/especies', 201, {'nome': 'Canina'}, a)
+        gato = self.call('POST', '/api/especies', 201, {'nome': 'Felina'}, a)
+        raca = self.call('POST', '/api/racas', 201, {'nome': 'Poodle', 'especie_id': cao['id']}, a)
+        p = {'nome': 'Luna', 'nascimento': '2022-01-01', 'sexo': 'F', 'tutor_id': tutor['id'], 'especie_id': cao['id'],
+             'raca_id': raca['id']}
+        self.call('POST', '/api/animais', 422, p | {'especie_id': gato['id']}, a)  # raça incompatível com a espécie
+        self.call('POST', '/api/animais', 422, {k: v for k, v in p.items() if k != 'nascimento'}, a)  # sem idade
+        self.call('POST', '/api/animais', 422, p | {'microchip': 'ABC'}, a)
+        sem_raca = self.call('POST', '/api/animais', 201, p | {'raca_id': None, 'nome': 'SRD'}, a)  # "sem raça"
+        self.assertIsNone(sem_raca['raca'])
+        animal = self.call('POST', '/api/animais', 201, p | {'microchip': '000000000000001'}, a)
+        id = animal['id']
+        self.assertEqual(animal['microchip'], '000000000000001')
+        self.call('POST', '/api/animais', 409, p | {'nome': 'Clone', 'microchip': '000000000000001'}, a)  # chip único
+        self.call('POST', f'/api/animais/{sem_raca["id"]}/microchip', 409, {'codigo': '000000000000001'}, a)
+        self.esperar(a, id, 'CONFIRMADA')
+        # substituição: o chip antigo permanece no histórico
+        novo = self.call('POST', f'/api/animais/{id}/microchip', 201, {'codigo': '000000000000002', 'motivo': 'Chip com defeito'}, a)
+        self.assertEqual(novo['microchip_anterior'], '000000000000001')
+        hist = self.call('GET', f'/api/animais/{id}/microchips', 200, auth=a)
+        self.assertEqual([(h['codigo'], h['situacao']) for h in hist],
+                         [('000000000000002', 'ATIVO'), ('000000000000001', 'SUBSTITUIDO')])
+        self.call('POST', f'/api/animais/{id}/microchip', 409, {'codigo': '000000000000001'}, a)  # não reutiliza chip antigo
+        self.assertEqual(self.call('GET', f'/api/animais?q=000000000000002', 200, auth=a)[0]['id'], id)
+        det = self.call('GET', f'/api/animais/{id}', 200, auth=a)
+        self.assertIn(det['integracao'], ('PENDENTE', 'ENVIADA', 'CONFIRMADA'))
+        # consultas e vacinas
+        hoje = date.today().isoformat()
+        amanha = (date.today() + timedelta(days=1)).isoformat()
+        c = {'animal_id': id, 'data_hora': hoje + 'T09:00:00', 'motivo': 'Rotina', 'situacao': 'REALIZADA'}
+        self.call('POST', '/api/consultas', 422, c | {'data_hora': amanha + 'T09:00:00'}, a)
+        self.call('POST', '/api/consultas', 201, c, a)
+        ag = self.call('POST', '/api/consultas', 201, c | {'data_hora': amanha + 'T09:00:00', 'situacao': 'AGENDADA'}, a)
+        self.call('PUT', f"/api/consultas/{ag['id']}/situacao", 200, {'situacao': 'CANCELADA'}, a)
+        self.call('PUT', f"/api/consultas/{ag['id']}/situacao", 409, {'situacao': 'REALIZADA'}, a)
+        v = {'animal_id': id, 'nome': 'V10', 'tipo': 'Múltipla', 'fabricante': 'Lab', 'lote': 'L1',
+             'data_aplicacao': hoje, 'data_proxima_dose': (date.today() + timedelta(days=30)).isoformat()}
+        self.call('POST', '/api/vacinas', 201, v, a)  # não antirrábica: não vai ao governo
+        self.call('POST', '/api/vacinas', 422, v | {'data_aplicacao': amanha, 'data_proxima_dose': None}, a)
+        self.call('POST', '/api/vacinas', 422, {k: val for k, val in v.items() if k != 'fabricante'}, a)
+        self.call('POST', '/api/vacinas', 422, v | {'antirrabica': True, 'animal_id': sem_raca['id']}, a)  # sem microchip
+        h = self.call('GET', f'/api/animais/{id}/historico', 200, auth=a)
+        self.assertEqual((len(h['consultas']), len(h['vacinas']), len(h['microchips'])), (2, 1, 2))
+        prox = self.call('GET', f'/api/vacinas/proximas-doses?animal_id={id}', 200, auth=a)
+        self.assertEqual(len(prox), 1)
+        ops = self.call('GET', f'/api/integracao?animal_id={id}', 200, auth=a)
+        self.assertTrue(all(o['tipo'] != 'VACINA_ANTIRRABICA' for o in ops))
+        self.call('DELETE', f'/api/tutores/{tutor["id"]}', 409, auth=a)  # tutor com animal ativo
+
+    # ---------- 4. integração com o governo
+    def test_05_antirrabica_governo_indisponivel_reenvio_e_idempotencia(self):
+        a = self.login()
+        e = self.call('POST', '/api/enderecos', 201, {'cep': '70040-010', 'numero': '5', 'logradouro': 'Esplanada',
+                      'bairro': 'Zona Cívico-Administrativa', 'cidade': 'Brasília', 'uf': 'DF'}, a)
+        tutor = self.call('POST', '/api/tutores', 201, {'nome': 'Tutor Gov', 'cpf': '86288366757', 'data_nascimento': '1980-02-02',
+                          'email': 'g@x.com', 'telefone': '6100000000', 'endereco_id': e['id']}, a)
+        esp = self.call('POST', '/api/especies', 201, {'nome': 'Canina Gov'}, a)
+        p = {'nome': 'Rex', 'nascimento': '2021-03-03', 'sexo': 'M', 'tutor_id': tutor['id'], 'especie_id': esp['id']}
+        self.addCleanup(lambda: self.client.put('/api/integracao/simulacao?indisponivel=false', headers=a))
+        self.call('PUT', '/api/integracao/simulacao?indisponivel=true', 200, auth=a)
+        animal = self.call('POST', '/api/animais', 201, p | {'microchip': '000000000000777'}, a)
+        id = animal['id']
+        hoje = date.today().isoformat()
+        v = {'animal_id': id, 'nome': 'Antirrábica', 'tipo': 'Raiva', 'antirrabica': True, 'fabricante': 'Lab', 'lote': 'R9',
+             'data_aplicacao': hoje}
+        vac = self.call('POST', '/api/vacinas', 201, v, a)  # registro local acontece mesmo com governo fora
+        self.assertEqual(vac['situacao'], 'APLICADA')
+        ops = self.esperar(a, id, 'PENDENTE', 2)
+        self.assertTrue(all(o['protocolo_externo'] is None for o in ops))
+        antes = self.remote.get('/api/governo/registros').json()
+        self.assertFalse([x for x in antes['animais'] if x.get('microchip') == '000000000000777'])
+        self.assertFalse([x for x in antes['vacinacoes'] if x['lote'] == 'R9'])
+        self.call('PUT', '/api/integracao/simulacao?indisponivel=false', 200, auth=a)
+        r = self.call('POST', f'/api/integracao/reenviar?animal_id={id}', 200, auth=a)
+        self.assertEqual((r['pendentes'], r['falhas']), (0, 0))
+        ops = self.call('GET', f'/api/integracao?animal_id={id}', 200, auth=a)
+        self.assertTrue(all(o['situacao'] == 'CONFIRMADA' and o['protocolo_externo'].startswith('GOV-') for o in ops))
+        um = self.call('GET', f"/api/integracao/{ops[0]['id']}", 200, auth=a)
+        self.assertEqual(um['situacao'], 'CONFIRMADA')
+        self.call('POST', f'/api/integracao/reenviar?animal_id={id}', 200, auth=a)  # segundo reenvio: nada novo
+        reg = self.remote.get('/api/governo/registros').json()
+        self.assertEqual(len([x for x in reg['animais'] if x['microchip'] == '000000000000777']), 1)
+        self.assertEqual(len([x for x in reg['vacinacoes'] if x['lote'] == 'R9']), 1)
+        self.assertEqual(self.remote.get('/api/governo/animais/000000000000777').json()['vacinacoes'][0]['lote'], 'R9')
+        # o registro local da vacina e a confirmação governamental são coisas distintas
+        self.assertIn('protocolo_externo', ops[0])
+
+    def test_06_governo_idempotencia_e_vacina_sem_cadastro(self):
+        h = {'Idempotency-Key': 'teste-idem-0001', 'X-API-Key': GOV_KEY}
+        vac = {'microchip': '000000000000888', 'animal_id': 900, 'animal_nome': 'Solto', 'vacina_id': 900, 'nome': 'Antirrábica',
+               'fabricante': 'Lab', 'lote': 'X1', 'data_aplicacao': date.today().isoformat(),
+               'veterinario_nome': 'Vet', 'veterinario_crmv': '123/RJ'}
+        a = self.remote.post('/api/governo/vacinacoes-antirrabicas', json=vac, headers=h)
+        b = self.remote.post('/api/governo/vacinacoes-antirrabicas', json=vac, headers=h)
+        self.assertEqual((a.status_code, b.status_code), (201, 201))
+        self.assertEqual(a.json()['protocolo'], b.json()['protocolo'])
+        self.assertTrue(b.json()['repetido'])
+        self.assertEqual(self.remote.post('/api/governo/vacinacoes-antirrabicas', json=vac | {'lote': 'X2'}, headers=h).status_code, 409)
+        # animal ainda não cadastrado no governo: a vacinação é aceita mesmo assim
+        self.assertEqual(self.remote.get('/api/governo/animais/000000000000888', headers={'X-API-Key': GOV_KEY}).status_code, 200)
+        self.assertEqual(self.remote.get('/api/governo/operacoes/' + a.json()['protocolo'], headers={'X-API-Key': GOV_KEY}).status_code, 200)
+        self.assertEqual(self.remote.get('/api/governo/operacoes/GOV-NAOEXISTE', headers={'X-API-Key': GOV_KEY}).status_code, 404)
+        self.assertEqual(httpx.post(self.gov + '/api/governo/vacinacoes-antirrabicas', json=vac, headers={'Idempotency-Key': 'sem-chave-api'}).status_code, 401)
+
 
 class ViaCEP(unittest.TestCase):
     def test_01_sucesso(self):
-        req=httpx.Request('GET','https://viacep.com.br/ws/01001000/json/')
-        with patch('sdm.clinica.httpx.get',return_value=httpx.Response(200,request=req,json={'cep':'01001-000','logradouro':'Praça da Sé','bairro':'Sé','localidade':'São Paulo','uf':'SP'})) as get:
-            self.assertEqual(buscar_cep('01001-000',{})['cidade'],'São Paulo')
-            get.assert_called_once_with(str(req.url),timeout=4.0)
+        req = httpx.Request('GET', 'https://viacep.com.br/ws/01001000/json/')
+        corpo = {'cep': '01001-000', 'logradouro': 'Praça da Sé', 'bairro': 'Sé', 'localidade': 'São Paulo', 'uf': 'SP', 'ibge': '3550308'}
+        with patch('sdm.clinica.httpx.get', return_value=httpx.Response(200, request=req, json=corpo)):
+            r = buscar_cep('01001-000', {})
+        self.assertEqual((r['cidade'], r['codigo_ibge']), ('São Paulo', '3550308'))
 
-    def test_02_ausente_e_formato_invalido(self):
-        req=httpx.Request('GET','https://viacep.com.br')
-        with patch('sdm.clinica.httpx.get',return_value=httpx.Response(200,request=req,json={'erro':True})) as get:
-            for cep,code in [('99999999',404),('xyz',422)]:
-                with self.assertRaises(HTTPException) as exc: buscar_cep(cep,{})
-                self.assertEqual(exc.exception.status_code,code)
-            self.assertEqual(get.call_count,1)
+    def test_02_inexistente_e_formato_invalido(self):
+        req = httpx.Request('GET', 'https://viacep.com.br')
+        with patch('sdm.clinica.httpx.get', return_value=httpx.Response(200, request=req, json={'erro': True})) as get:
+            for cep, code in [('99999999', 404), ('xyz', 422)]:
+                with self.assertRaises(HTTPException) as exc:
+                    buscar_cep(cep, {})
+                self.assertEqual(exc.exception.status_code, code)
+            self.assertEqual(get.call_count, 1)
 
-    def test_03_indisponivel(self):
-        with patch('sdm.clinica.httpx.get',side_effect=httpx.ReadTimeout('timeout')):
-            with self.assertRaises(HTTPException) as exc: buscar_cep('01001000',{})
-            self.assertEqual(exc.exception.status_code,503)
+    def test_03_timeout_e_indisponibilidade(self):
+        for erro, code in [(httpx.ReadTimeout('t'), 504), (httpx.ConnectError('c'), 503)]:
+            with patch('sdm.clinica.httpx.get', side_effect=erro):
+                with self.assertRaises(HTTPException) as exc:
+                    buscar_cep('01001000', {})
+                self.assertEqual(exc.exception.status_code, code)
 
-if __name__=='__main__': unittest.main()
+
+class Validacao(unittest.TestCase):
+    def test_cpf(self):
+        from sdm.validacao import cpf_valido
+        self.assertTrue(cpf_valido('390.533.447-05') and cpf_valido('39053344705'))
+        self.assertFalse(any(cpf_valido(x) for x in ('111.111.111-11', '390.533.447-06', '123', '')))
+
+
+if __name__ == '__main__':
+    unittest.main()

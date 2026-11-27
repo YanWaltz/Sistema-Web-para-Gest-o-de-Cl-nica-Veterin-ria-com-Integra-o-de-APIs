@@ -1,7 +1,6 @@
 {
   "info": {
-    "name": "SDM Clínica",
-    "description": "Inicie os serviços e execute as requisições em ordem. Dados fictícios. Para testar ViaCEP ao vivo, após o login envie GET /api/cep/01001000 com o mesmo token.",
+    "name": "SDM - Clínica Veterinária",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,66 +9,19 @@
       "value": "http://127.0.0.1:8000"
     },
     {
+      "key": "gov",
+      "value": "http://127.0.0.1:8001"
+    },
+    {
+      "key": "govkey",
+      "value": "somente-demonstracao-local"
+    },
+    {
       "key": "token",
-      "value": ""
-    },
-    {
-      "key": "endereco",
-      "value": ""
-    },
-    {
-      "key": "tutor",
-      "value": ""
-    },
-    {
-      "key": "especie",
-      "value": ""
-    },
-    {
-      "key": "raca",
-      "value": ""
-    },
-    {
-      "key": "vet",
-      "value": ""
-    },
-    {
-      "key": "animal",
-      "value": ""
-    },
-    {
-      "key": "chip",
-      "value": ""
-    },
-    {
-      "key": "hoje",
-      "value": ""
-    },
-    {
-      "key": "marca",
       "value": ""
     }
   ],
   "item": [
-    {
-      "name": "Saúde da clínica",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "{{base}}/saude"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
-            ]
-          }
-        }
-      ]
-    },
     {
       "name": "Login",
       "request": {
@@ -80,15 +32,20 @@
             "value": "application/json"
           }
         ],
-        "url": "{{base}}/api/login",
+        "url": {
+          "raw": "{{base}}/api/auth/login",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"usuario\": \"admin\",\n  \"senha\": \"ClinicaDemo!26\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
+          "raw": "{\n  \"email\": \"demo@clinica.local\",\n  \"senha\": \"ClinicaDemo!26\"\n}"
         }
       },
       "event": [
@@ -97,560 +54,759 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-              "if(pm.response.code===200) pm.collectionVariables.set('token',pm.response.json().access_token);",
-              "const d = new Date();",
-              "pm.collectionVariables.set('hoje',new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10));",
-              "pm.collectionVariables.set('chip',Date.now().toString().padStart(15,'0'));",
-              "pm.collectionVariables.set('marca',Date.now().toString().slice(-8));"
+              "pm.collectionVariables.set('token', pm.response.json().access_token);"
             ]
           }
         }
       ]
     },
     {
-      "name": "CEP inválido",
+      "name": "Registro de veterinário",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base}}/api/auth/registro",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "registro"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Vet Novo\",\n  \"cpf\": \"529.982.247-25\",\n  \"crmv_numero\": \"777\",\n  \"crmv_uf\": \"SP\",\n  \"email\": \"novo@clinica.local\",\n  \"senha\": \"SenhaForte123\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Confirmar código",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base}}/api/auth/confirmar",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "confirmar"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"novo@clinica.local\",\n  \"codigo\": \"000000\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Eu",
       "request": {
         "method": "GET",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          }
-        ],
-        "url": "{{base}}/api/cep/abc"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 422', () => pm.response.to.have.status(422));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Endereço",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{base}}/api/enderecos",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"cep\": \"01001000\",\n  \"logradouro\": \"Praça da Sé\",\n  \"numero\": \"10\",\n  \"bairro\": \"Sé\",\n  \"cidade\": \"São Paulo\",\n  \"uf\": \"SP\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/auth/me",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
             }
-          }
+          ]
         }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
-              "if(pm.response.code===201) pm.collectionVariables.set('endereco',pm.response.json().id);"
-            ]
-          }
-        }
-      ]
+      }
     },
     {
-      "name": "Tutor",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{base}}/api/tutores",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"nome\": \"Tutor Demo\",\n  \"telefone\": \"2100000000\",\n  \"endereco_id\": \"{{endereco}}\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
-              "if(pm.response.code===201) pm.collectionVariables.set('tutor',pm.response.json().id);"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Espécie",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{base}}/api/especies",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"nome\": \"Canina Demo {{marca}}\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
-              "if(pm.response.code===201) pm.collectionVariables.set('especie',pm.response.json().id);"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Raça",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{base}}/api/racas",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"nome\": \"SRD\",\n  \"especie_id\": \"{{especie}}\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
-              "if(pm.response.code===201) pm.collectionVariables.set('raca',pm.response.json().id);"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Veterinário",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{base}}/api/veterinarios",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"nome\": \"Vet Demo\",\n  \"crmv\": \"DEMO-{{marca}}\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
-              "if(pm.response.code===201) pm.collectionVariables.set('vet',pm.response.json().id);"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Simular falha",
-      "request": {
-        "method": "PUT",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          }
-        ],
-        "url": "{{base}}/api/integracao/simulacao?indisponivel=true"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Criar animal na falha",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{base}}/api/animais",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"nome\": \"Luna\",\n  \"tutor_id\": \"{{tutor}}\",\n  \"especie_id\": \"{{especie}}\",\n  \"raca_id\": \"{{raca}}\",\n  \"microchip\": \"{{chip}}\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
-              "if(pm.response.code===201) pm.collectionVariables.set('animal',pm.response.json().id);"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Microchip duplicado",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{base}}/api/animais",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"nome\": \"Luna\",\n  \"tutor_id\": \"{{tutor}}\",\n  \"especie_id\": \"{{especie}}\",\n  \"raca_id\": \"{{raca}}\",\n  \"microchip\": \"{{chip}}\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Editar animal",
-      "request": {
-        "method": "PUT",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{base}}/api/animais/{{animal}}",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"nome\": \"Luna atualizada\",\n  \"tutor_id\": \"{{tutor}}\",\n  \"especie_id\": \"{{especie}}\",\n  \"raca_id\": \"{{raca}}\",\n  \"microchip\": \"{{chip}}\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Consulta",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{base}}/api/consultas",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"animal_id\": \"{{animal}}\",\n  \"veterinario_id\": \"{{vet}}\",\n  \"data\": \"{{hoje}}\",\n  \"descricao\": \"Consulta de demonstração\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 201', () => pm.response.to.have.status(201));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Vacina",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": "{{base}}/api/vacinas",
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"animal_id\": \"{{animal}}\",\n  \"veterinario_id\": \"{{vet}}\",\n  \"data\": \"{{hoje}}\",\n  \"nome\": \"Antirrábica\",\n  \"lote\": \"DEMO01\",\n  \"antirrabica\": true\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 201', () => pm.response.to.have.status(201));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Histórico",
+      "name": "Buscar CEP (ViaCEP)",
       "request": {
         "method": "GET",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          }
-        ],
-        "url": "{{base}}/api/animais/{{animal}}/historico"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
-            ]
-          }
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/cep/01001000",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "cep",
+            "01001000"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
         }
-      ]
+      }
     },
     {
-      "name": "Restaurar governo",
-      "request": {
-        "method": "PUT",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          }
-        ],
-        "url": "{{base}}/api/integracao/simulacao?indisponivel=false"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Reenviar",
+      "name": "Criar endereço",
       "request": {
         "method": "POST",
         "header": [
           {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
+            "key": "Content-Type",
+            "value": "application/json"
           }
         ],
-        "url": "{{base}}/api/integracao/reenviar"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
-            ]
-          }
+        "url": {
+          "raw": "{{base}}/api/enderecos",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "enderecos"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"cep\": \"01001-000\",\n  \"numero\": \"10\",\n  \"logradouro\": \"Praça da Sé\",\n  \"bairro\": \"Sé\",\n  \"cidade\": \"São Paulo\",\n  \"uf\": \"SP\",\n  \"codigo_ibge\": \"3550308\"\n}"
         }
-      ]
+      }
     },
     {
-      "name": "Status e protocolos",
+      "name": "Criar tutor",
       "request": {
-        "method": "GET",
+        "method": "POST",
         "header": [
           {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
+            "key": "Content-Type",
+            "value": "application/json"
           }
         ],
-        "url": "{{base}}/api/integracao"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
-            ]
-          }
+        "url": {
+          "raw": "{{base}}/api/tutores",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "tutores"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Maria Tutora\",\n  \"cpf\": \"390.533.447-05\",\n  \"data_nascimento\": \"1990-05-10\",\n  \"email\": \"maria@x.com\",\n  \"telefone\": \"21999990001\",\n  \"endereco_id\": 1\n}"
         }
-      ]
+      }
+    },
+    {
+      "name": "Criar espécie",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base}}/api/especies",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "especies"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Canina\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Criar raça",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base}}/api/racas",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "racas"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Poodle\",\n  \"especie_id\": 1\n}"
+        }
+      }
+    },
+    {
+      "name": "Criar animal com microchip",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base}}/api/animais",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "animais"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"nome\": \"Luna\",\n  \"nascimento\": \"2022-01-01\",\n  \"sexo\": \"F\",\n  \"tutor_id\": 1,\n  \"especie_id\": 1,\n  \"raca_id\": 1,\n  \"microchip\": \"000000000000001\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Substituir microchip",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base}}/api/animais/1/microchip",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "animais",
+            "1",
+            "microchip"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"codigo\": \"000000000000002\",\n  \"motivo\": \"Chip com defeito\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Histórico de microchips",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/animais/1/microchips",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "animais",
+            "1",
+            "microchips"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Criar consulta",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base}}/api/consultas",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "consultas"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"animal_id\": 1,\n  \"data_hora\": \"2026-11-20T09:00:00\",\n  \"motivo\": \"Rotina\",\n  \"situacao\": \"REALIZADA\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Consultas do animal",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/animais/1/consultas",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "animais",
+            "1",
+            "consultas"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Criar vacina antirrábica",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base}}/api/vacinas",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "vacinas"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"animal_id\": 1,\n  \"nome\": \"Antirrábica\",\n  \"tipo\": \"Raiva\",\n  \"antirrabica\": true,\n  \"fabricante\": \"Lab\",\n  \"lote\": \"R9\",\n  \"data_aplicacao\": \"2026-11-20\",\n  \"data_proxima_dose\": \"2027-11-20\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Vacinas do animal",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/animais/1/vacinas",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "animais",
+            "1",
+            "vacinas"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Próximas doses",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/vacinas/proximas-doses",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "vacinas",
+            "proximas-doses"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Integração: listar",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/integracao",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "integracao"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Integração: reenviar",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/integracao/reenviar",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "integracao",
+            "reenviar"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Simular governo fora do ar",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/integracao/simulacao?indisponivel=true",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "integracao",
+            "simulacao?indisponivel=true"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Restabelecer governo",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/integracao/simulacao?indisponivel=false",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "integracao",
+            "simulacao?indisponivel=false"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
     },
     {
       "name": "Logout",
       "request": {
         "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{base}}/api/auth/logout",
+          "host": [
+            "{{base}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "logout"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "GOV: cadastrar animal",
+      "request": {
+        "method": "POST",
         "header": [
           {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-API-Key",
+            "value": "{{govkey}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "colecao-animal-0001"
           }
         ],
-        "url": "{{base}}/api/logout"
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
-            ]
-          }
+        "url": {
+          "raw": "{{gov}}/api/governo/animais",
+          "host": [
+            "{{gov}}"
+          ],
+          "path": [
+            "api",
+            "governo",
+            "animais"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"microchip\": \"000000000000009\",\n  \"animal_id\": 9,\n  \"versao\": 1,\n  \"nome\": \"Teste\",\n  \"especie\": \"Canina\",\n  \"sexo\": \"M\"\n}"
         }
-      ]
+      }
+    },
+    {
+      "name": "GOV: vacinação antirrábica",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-API-Key",
+            "value": "{{govkey}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "colecao-vacina-0001"
+          }
+        ],
+        "url": {
+          "raw": "{{gov}}/api/governo/vacinacoes-antirrabicas",
+          "host": [
+            "{{gov}}"
+          ],
+          "path": [
+            "api",
+            "governo",
+            "vacinacoes-antirrabicas"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"microchip\": \"000000000000009\",\n  \"animal_id\": 9,\n  \"animal_nome\": \"Teste\",\n  \"vacina_id\": 9,\n  \"nome\": \"Antirrábica\",\n  \"fabricante\": \"Lab\",\n  \"lote\": \"X1\",\n  \"data_aplicacao\": \"2026-11-20\",\n  \"veterinario_nome\": \"Vet\",\n  \"veterinario_crmv\": \"123/RJ\"\n}"
+        }
+      }
+    },
+    {
+      "name": "GOV: consultar animal",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{govkey}}"
+          }
+        ],
+        "url": {
+          "raw": "{{gov}}/api/governo/animais/000000000000009",
+          "host": [
+            "{{gov}}"
+          ],
+          "path": [
+            "api",
+            "governo",
+            "animais",
+            "000000000000009"
+          ]
+        }
+      }
     }
   ]
 }

@@ -1,13 +1,2 @@
-test_01_acesso_documentacao_e_interface (test_fluxos.Integrado.test_01_acesso_documentacao_e_interface) ... ok
-test_02_fluxo_clinico_e_reenvio (test_fluxos.Integrado.test_02_fluxo_clinico_e_reenvio) ... EVIDÊNCIA: animal e vacina gravados localmente durante HTTP 503; três operações reenviadas com protocolo; segundo reenvio não duplicou registros.
-ok
-test_03_idempotencia_remota (test_fluxos.Integrado.test_03_idempotencia_remota) ... EVIDÊNCIA: repetição da chave devolveu o mesmo protocolo; carga diferente com a mesma chave foi rejeitada.
-ok
-test_01_sucesso (test_fluxos.ViaCEP.test_01_sucesso) ... ok
-test_02_ausente_e_formato_invalido (test_fluxos.ViaCEP.test_02_ausente_e_formato_invalido) ... ok
-test_03_indisponivel (test_fluxos.ViaCEP.test_03_indisponivel) ... ok
-
-----------------------------------------------------------------------
-Ran 6 tests in 20.548s
-
-OK
+Evidência: rode `python -m unittest discover -s tests -v` e cole a saída aqui antes de entregar.
+Resultado obtido no desenvolvimento: Ran 10 tests ... OK

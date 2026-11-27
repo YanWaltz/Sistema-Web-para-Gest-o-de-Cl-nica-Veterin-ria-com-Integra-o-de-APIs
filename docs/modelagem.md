@@ -1,53 +1,28 @@
-# Modelagem e arquitetura
+# Modelo de dados
 
-## Modelo entidade-relacionamento (MER)
+## Endereço normalizado (correção pedida pelo professor)
+Antes cada endereço repetia logradouro, bairro, cidade e UF. Com milhares de moradores, isso gera milhares de cópias do mesmo CEP.
+Agora:
+- `ceps(id, cep UNIQUE, logradouro, bairro, cidade, uf, codigo_ibge)` — uma linha por CEP.
+- `enderecos(id, cep_id FK, numero, complemento, UNIQUE(cep_id, numero, complemento))` — só o que varia por moradia.
+- `tutores.endereco_id` aponta para `enderecos`. Vários tutores da mesma casa compartilham o mesmo registro.
+A API (`POST /api/enderecos`) faz *get-or-create*: se o CEP já existe só é preciso informar número/complemento.
 
-O diagrama é renderizado no GitHub. A lista abaixo dele permite ler os relacionamentos mesmo sem visualização Mermaid.
+## CPF
+`tutores.cpf` e `veterinarios.cpf`: 11 dígitos, `UNIQUE`, validados pelos dígitos verificadores antes de gravar.
 
-```mermaid
-erDiagram
-    ENDERECO ||--o{ TUTOR : referencia
-    TUTOR ||--o{ ANIMAL : responsavel
-    ESPECIE ||--o{ RACA : agrupa
-    ESPECIE ||--o{ ANIMAL : classifica
-    RACA o|--o{ ANIMAL : detalha
-    ANIMAL ||--o{ CONSULTA : recebe
-    ANIMAL ||--o{ VACINA : recebe
-    VETERINARIO ||--o{ CONSULTA : registra
-    VETERINARIO ||--o{ VACINA : aplica
-    ANIMAL ||--o{ OPERACAO : gera
-    USUARIO ||--o{ SESSAO : inicia
-```
+## Tabelas
+| Tabela | Principais colunas |
+|---|---|
+| veterinarios | nome, cpf UNIQUE, crmv_numero+crmv_uf UNIQUE, email UNIQUE, telefone, senha_hash, senha_confirmada, data_confirmacao, data_cadastro, situacao, ultimo_acesso |
+| sessoes | token_hash, veterinario_id FK, expira |
+| ceps / enderecos | ver acima |
+| tutores | nome, cpf UNIQUE, data_nascimento, email, telefone, endereco_id FK, data_cadastro, situacao |
+| especies / racas | racas.especie_id FK; (raca_id, especie_id) é FK composta em animais |
+| animais | nome, nascimento ou idade_estimada_meses, sexo, cor, peso_atual, tutor_id, especie_id, raca_id (opcional), situacao, versao |
+| vinculos_microchip | animal_id, codigo UNIQUE, veterinario_id, data_vinculo, situacao ATIVO/SUBSTITUIDO, índice único parcial (1 ativo por animal) |
+| consultas | animal_id, veterinario_id, data_hora, motivo, anamnese, sintomas, diagnostico, tratamento, prescricao, peso_registrado, temperatura, observacoes, situacao |
+| vacinas | animal_id, veterinario_id, nome, tipo, antirrabica, fabricante, lote, validade_lote, data_aplicacao, dose_etapa, via_aplicacao, data_proxima_dose, observacoes, situacao |
+| integracoes_governo | animal_id, vacina_id, tipo, payload, protocolo_externo, chave_idempotencia UNIQUE, situacao PENDENTE/ENVIADA/CONFIRMADA/FALHA, tentativas, mensagem_erro, datas |
 
-## Modelo relacional
-
-PK é a chave primária; FK é uma referência a outra tabela. A definição executável está em [`sdm/schema.sql`](../sdm/schema.sql).
-
-| Tabela | PK e campos principais | Relacionamentos e restrições |
-|---|---|---|
-| enderecos | id, cep, logradouro, numero, complemento, bairro, cidade, uf | Endereço pode servir a vários tutores. |
-| tutores | id, nome, telefone | `endereco_id` FK obrigatória |
-| especies | id, nome | Nome único |
-| racas | id, nome | `especie_id` FK; nome único por espécie |
-| veterinarios | id, nome, crmv | CRMV único |
-| animais | id, nome, nascimento, microchip, versao, ativo | FKs `tutor_id`, `especie_id`, `raca_id` opcional; microchip único; FK composta garante raça da espécie correta |
-| consultas | id, data, descricao | FKs `animal_id`, `veterinario_id` |
-| vacinas | id, data, nome, lote, antirrabica | FKs `animal_id`, `veterinario_id` |
-| usuarios | id, usuario, senha_hash, papel | Usuário único |
-| sessoes | token_hash, expira | `usuario_id` FK |
-| operacoes | id, chave, tipo, payload, status, tentativas, protocolo, erro, criado, atualizado | `animal_id` FK; chave de idempotência única |
-
-O governo simulado tem um SQLite próprio com tabelas `animais`, `vacinas`, `protocolos` e `configuracao`. Os IDs de negócio cruzam a rede via JSON, e não por FK entre bancos.
-
-## Arquitetura da solução
-
-```mermaid
-flowchart LR
-    U[Navegador / HTML CSS JavaScript] -->|HTTP local e token| C[API privada da clínica / porta 8000]
-    C -->|SQL| A[(SQLite da clínica)]
-    C -->|HTTPS: consulta CEP| V[API pública ViaCEP]
-    C -->|HTTP: chave de API e idempotência| G[API governamental simulada / porta 8001]
-    G -->|SQL| B[(SQLite governamental)]
-```
-
-**Fluxo de integração:** o cadastro ou a vacina antirrábica gera uma linha em `operacoes`. Após o commit, uma tarefa da API tenta o envio. Se houver sucesso, grava protocolo e marca `ENVIADO`. Se houver erro, registra `FALHA` e preserva o conteúdo para reenvio. Operações posteriores do mesmo animal aguardam a primeira falha ser resolvida. A confirmação no governo é registrada na mesma transação da alteração remota; se a resposta se perder, repetir a chave devolve o protocolo original.
+Os PDFs do modelo relacional/EER/conceitual precisam refletir `ceps` (ver entregas).

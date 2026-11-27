@@ -1,59 +1,308 @@
 'use strict';
+// Interface do SDM. Todo texto vindo da API entra na tela por textContent (nunca innerHTML).
 const $ = (s) => document.querySelector(s);
-const node = (tag,text,cls) => {const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
-let token='', profile=null, section='Animais', epoch=0;
-const screen=$('#screen');
-const headers={enderecos:'Endereços',tutores:'Tutores',especies:'Espécies',racas:'Raças',veterinarios:'Veterinários',animais:'Animais'};
-const fields={enderecos:[['cep','CEP'],['logradouro','Logradouro'],['numero','Número'],['complemento','Complemento','optional'],['bairro','Bairro'],['cidade','Cidade'],['uf','UF']],tutores:[['nome','Nome'],['telefone','Telefone'],['endereco_id','Endereço','enderecos']],especies:[['nome','Nome']],racas:[['nome','Nome'],['especie_id','Espécie','especies']],veterinarios:[['nome','Nome'],['crmv','CRMV']],animais:[['nome','Nome'],['nascimento','Nascimento','date'],['tutor_id','Tutor','tutores'],['especie_id','Espécie','especies'],['raca_id','Raça (opcional)','racas'],['microchip','Microchip (15 dígitos)']]};
-const labels={id:'ID',nome:'Nome',cep:'CEP',logradouro:'Logradouro',numero:'Número',cidade:'Cidade',telefone:'Telefone',crmv:'CRMV',especie_id:'Espécie',endereco_id:'Endereço',tutor:'Tutor',especie:'Espécie',raca:'Raça',microchip:'Microchip',ativo:'Situação',animal:'Animal',tipo:'Operação',status:'Status',tentativas:'Tentativas',protocolo:'Protocolo',erro:'Erro',atualizado:'Atualizado (UTC)'};
-const columns={enderecos:['id','cep','logradouro','numero','cidade'],tutores:['id','nome','telefone','endereco_id'],especies:['id','nome'],racas:['id','nome','especie_id'],veterinarios:['id','nome','crmv'],animais:['id','nome','tutor','especie','raca','microchip','ativo']};
-const tipos={CADASTRO_ANIMAL:'Cadastro de animal',ATUALIZACAO_ANIMAL:'Atualização de animal',INATIVACAO_ANIMAL:'Inativação de animal',VACINA_ANTIRRABICA:'Vacina antirrábica'};
-function msg(text,error=false){const n=$('#notice');n.textContent=text;n.className=error?'error':'';n.hidden=!text;}
-function erro(e){msg(e.message,true);}
-function btn(text,fn,cls='secondary'){const b=node('button',text,cls);b.type='button';b.addEventListener('click',async()=>{b.disabled=true;try{await fn();}catch(e){erro(e);}finally{b.disabled=false;}});return b;}
-async function api(path,method='GET',body){
- const res=await fetch('/api'+path,{method,headers:{...(token?{Authorization:'Bearer '+token}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});
- if(res.status===204)return;
- const data=await res.json();
- if(!res.ok){if(res.status===401&&token)showLogin();throw Error(Array.isArray(data.detail)?data.detail.map(x=>`${x.loc.at(-1)}: ${x.msg}`).join('; '):data.detail||'Falha na operação.');}
- return data;
+const node = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = text; if (cls) n.className = cls; return n; };
+let token = '', epoch = 0;
+const screen = $('#screen');
+
+const ROTULOS = {
+  id: 'ID', nome: 'Nome', cpf: 'CPF', email: 'E-mail', telefone: 'Telefone', crmv: 'CRMV', cep: 'CEP', logradouro: 'Logradouro',
+  numero: 'Número', complemento: 'Compl.', bairro: 'Bairro', cidade: 'Cidade', uf: 'UF', codigo_ibge: 'IBGE', situacao: 'Situação',
+  tutor: 'Tutor', especie: 'Espécie', raca: 'Raça', microchip: 'Microchip', integracao: 'Governo', endereco: 'Endereço',
+  descricao: 'Descrição', animal: 'Animal', tipo: 'Operação', tentativas: 'Tentativas', protocolo_externo: 'Protocolo',
+  mensagem_erro: 'Mensagem', data_cadastro: 'Cadastro', ultimo_acesso: 'Último acesso', senha_confirmada: 'Confirmado',
+  data_nascimento: 'Nascimento', codigo: 'Microchip', data_vinculo: 'Vinculado em', veterinario: 'Veterinário', motivo: 'Motivo',
+  data_hora: 'Data/hora', fabricante: 'Fabricante', lote: 'Lote', data_aplicacao: 'Aplicação', data_proxima_dose: 'Próxima dose',
+  dose_etapa: 'Dose', vacina: 'Vacina', dias_restantes: 'Dias', data_solicitacao: 'Solicitado em'
+};
+const TIPOS = { CADASTRO_ANIMAL: 'Cadastro de animal', ATUALIZACAO_ANIMAL: 'Atualização de animal', VACINA_ANTIRRABICA: 'Vacina antirrábica' };
+const CLASSE = { CONFIRMADA: 'ok', ATIVO: 'ok', APLICADA: 'ok', REALIZADA: 'ok', FALHA: 'fail', CANCELADA: 'fail', INATIVO: 'fail',
+                 PENDENTE: 'pending', ENVIADA: 'pending', AGENDADA: 'pending', SUBSTITUIDO: 'pending' };
+
+function msg(text, error = false) { const n = $('#notice'); n.textContent = text; n.className = error ? 'error' : ''; n.hidden = !text; }
+function erro(e) { msg(e.message, true); }
+function btn(text, fn, cls = 'secondary') {
+  const b = node('button', text, cls); b.type = 'button';
+  b.addEventListener('click', async () => { b.disabled = true; try { await fn(); } catch (e) { erro(e); } finally { b.disabled = false; } });
+  return b;
 }
-function showLogin(){epoch++;token='';profile=null;$('#login').hidden=false;$('#workspace').hidden=true;$('#logout').hidden=true;$('#who').textContent='Ambiente de demonstração';$('#loginForm').reset();}
-$('#loginForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.currentTarget;f.querySelector('button').disabled=true;try{profile=await api('/login','POST',Object.fromEntries(new FormData(f)));token=profile.access_token;f.reset();$('#login').hidden=true;$('#workspace').hidden=false;$('#logout').hidden=false;$('#who').textContent=profile.usuario+' • '+(profile.papel==='admin'?'Administrador':'Clínica');await go('Animais');}catch(e){erro(e);}finally{f.querySelector('button').disabled=false;}});
-$('#logout').addEventListener('click',async()=>{try{await api('/logout','POST');}catch(e){/* encerra a sessão local mesmo se a conexão cair */}showLogin();msg('Sessão encerrada.');});
-function start(title,description){screen.replaceChildren();const h=node('h1',title);h.id='title';screen.append(h,node('p',description,'muted'));}
-async function go(s){const version=++epoch;section=s;msg('');const nav=$('#nav');nav.replaceChildren();for(const a of ['Animais','Cadastros','Atendimentos','Integração']){const b=btn(a,()=>go(a));if(a===s)b.setAttribute('aria-current','page');nav.append(b);}start(s,'Carregando…');if(s==='Animais')return list('animais','',version);if(s==='Cadastros')return list('tutores','',version);if(s==='Atendimentos')return atendimento(version);return integracao(version);}
-function table(rows,keys,action){if(!rows.length)return node('p','Nenhum registro encontrado.','muted');const box=node('div',null,'tablebox');const t=node('table'),hd=node('thead'),tr=node('tr'),body=node('tbody');keys.forEach(k=>{const th=node('th',labels[k]||k);th.scope='col';tr.append(th);});if(action)tr.append(node('th','Ações'));hd.append(tr);t.append(hd,body);for(const r of rows){const row=node('tr');for(const k of keys){const td=node('td');if(k==='status')td.append(node('span',r[k],'tag '+({ENVIADO:'ok',FALHA:'fail',PENDENTE:'pending'}[r[k]]||'')));else td.textContent=(k==='ativo'?(r[k]?'Ativo':'Inativo'):k==='tipo'?(tipos[r[k]]||r[k]):r[k])??'—';row.append(td);}if(action){const td=node('td');td.append(action(r));row.append(td);}body.append(row);}box.append(t);return box;}
-function list(tab,q='',version=++epoch){return renderList(tab,q,version);}
-async function renderList(tab,q,version){
- const rows=await api('/'+tab+(tab==='animais'?'?q='+encodeURIComponent(q):''));if(version!==epoch)return;
- start(headers[tab],tab==='animais'?'Cadastre animais com microchip e consulte o histórico.':'Gerencie os dados usados nos cadastros e atendimentos.');
- if(tab!=='animais'){const sub=node('div',null,'toolbar');for(const k of Object.keys(headers).filter(k=>k!=='animais')){const b=btn(headers[k],()=>list(k));if(k===tab)b.setAttribute('aria-current','page');sub.append(b);}screen.append(sub);}
- const bar=node('div',null,'toolbar');bar.append(btn('Novo cadastro',()=>edit(tab),''));
- if(tab==='animais'){const l=node('label','Nome ou microchip'),i=node('input');i.value=q;i.maxLength=100;l.append(i);i.addEventListener('keydown',e=>{if(e.key==='Enter')list(tab,i.value).catch(erro);});bar.append(l,btn('Buscar',()=>list(tab,i.value)));}
- screen.append(bar);const formbox=node('div');formbox.id='formbox';screen.append(formbox,table(rows,columns[tab],r=>{const a=node('div',null,'actions');if(tab==='animais')a.append(btn('Histórico',()=>history(r.id)));if(tab!=='animais'||r.ativo){a.append(btn('Editar',()=>edit(tab,r)));if(profile.papel==='admin')a.append(btn(tab==='animais'?'Inativar':'Excluir',async()=>{if(!window.confirm('Confirma esta alteração?'))return;await api(`/${tab}/${r.id}`,'DELETE');await list(tab,q);msg('Alteração salva.');},'danger'));}return a;}));
+async function api(path, method = 'GET', body) {
+  const res = await fetch('/api' + path, { method, headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 204) return;
+  const data = await res.json();
+  if (!res.ok) {
+    if (res.status === 401 && token) showLogin();
+    throw Error(Array.isArray(data.detail) ? data.detail.map(x => `${x.loc.at(-1)}: ${x.msg}`).join('; ') : data.detail || 'Falha na operação.');
+  }
+  return data;
 }
-function labelFor(r){return r.nome||`${r.logradouro}, ${r.numero} • ${r.cidade}`;}
-function makeField([key,label,type],current,opts={}){const l=node('label',label);let input;if(opts[type]){input=node('select');input.append(new Option(key==='raca_id'?'Sem raça':'Selecione',''));for(const o of opts[type])input.append(new Option(labelFor(o),o.id));}
- else if(type==='area'){input=node('textarea');input.maxLength=2000;}else{input=node('input');input.type=type==='date'?'date':type==='check'?'checkbox':'text';if(key==='microchip'){input.pattern='[0-9]{15}';input.maxLength=15;input.inputMode='numeric';}if(key==='uf')input.maxLength=2;}
- input.name=key;input.required=!['optional','date','check'].includes(type)&&key!=='raca_id';if(type==='check')input.checked=!!current;else input.value=current??'';l.append(input);return l;}
-function dataFrom(f){const result={};for(const input of f.querySelectorAll('input,select,textarea')){const {name,value,type}=input;if(!name)continue;result[name]=type==='checkbox'?input.checked:name.endsWith('_id')?(value?Number(value):null):value.trim()||null;}return result;}
-function formAction(f,fn){f.addEventListener('submit',async(e)=>{e.preventDefault();const b=f.querySelector('[type=submit]');b.disabled=true;try{await fn();}catch(e){erro(e);}finally{b.disabled=false;}});}
-async function edit(tab,item={}){
- const version=epoch;const opts={};await Promise.all(fields[tab].filter(x=>headers[x[2]]).map(async x=>{opts[x[2]]=await api('/'+x[2]);}));if(version!==epoch)return;
- const box=$('#formbox');box.replaceChildren();const fs=node('fieldset'),lg=node('legend',item.id?'Editar cadastro':'Novo cadastro'),f=node('form'),grid=node('div',null,'grid');
- if(Object.entries(opts).some(([k,v])=>k!=='racas'&&!v.length))fs.append(lg,node('p','Cadastre primeiro os registros vinculados na seção Cadastros.'));else fs.append(lg);
- fields[tab].forEach(spec=>grid.append(makeField(spec,item[spec[0]],opts)));f.append(grid);
- if(tab==='animais'){
-  const es=f.elements.especie_id,ra=f.elements.raca_id;
-  const filtrar=(v)=>{ra.replaceChildren(new Option('Sem raça',''));for(const o of opts.racas.filter(r=>r.especie_id===Number(es.value)))ra.append(new Option(o.nome,o.id));ra.value=v||'';};filtrar(item.raca_id);es.addEventListener('change',()=>filtrar());
- }
- const a=node('div',null,'actions'),save=node('button','Salvar');save.type='submit';a.append(save,btn('Cancelar',()=>box.replaceChildren()));
- if(tab==='enderecos')a.append(btn('Consultar ViaCEP',async()=>{const val=f.elements.cep.value.trim();if(!val)throw Error('Digite o CEP antes de consultar.');const r=await api('/cep/'+encodeURIComponent(val));for(const k of ['cep','logradouro','bairro','cidade','uf'])f.elements[k].value=r[k];msg('CEP encontrado. Complete os campos que faltam.');}));
- f.append(a);fs.append(f);box.append(fs);f.querySelector('input,select').focus();formAction(f,async()=>{await api('/'+tab+(item.id?'/'+item.id:''),item.id?'PUT':'POST',dataFrom(f));await list(tab);msg(tab==='animais'?'Animal salvo. Consulte a aba Integração para ver o envio.':'Cadastro salvo.');});
+
+// ------------------------------------------------------------------ acesso
+function trocarForm(id) {
+  for (const f of ['loginForm', 'registroForm', 'confirmaForm']) $('#' + f).hidden = f !== id;
 }
-async function history(id){const version=++epoch;const r=await api('/animais/'+id+'/historico');if(version!==epoch)return;start('Histórico de '+r.animal.nome,'Microchip: '+r.animal.microchip);screen.append(btn('Voltar para animais',()=>go('Animais')));const split=node('div',null,'split');for(const [k,t] of [['consultas','Consultas'],['vacinas','Vacinas']]){const box=node('div',null,'mini');box.append(node('h2',t));if(!r[k].length)box.append(node('p','Nenhum registro.'));for(const x of r[k])box.append(node('p',k==='consultas'?`${x.data} • ${x.veterinario}: ${x.descricao}`:`${x.data} • ${x.nome} • Lote ${x.lote} • ${x.veterinario}${x.antirrabica?' • Antirrábica':''}`));split.append(box);}screen.append(split);}
-async function atendimento(version=++epoch){const [animals,vets]=await Promise.all([api('/animais'),api('/veterinarios')]);if(version!==epoch)return;start('Atendimentos','Registre consultas e vacinas e consulte o resultado no histórico do animal.');if(!animals.some(a=>a.ativo)||!vets.length){screen.append(node('p','Primeiro, cadastre pelo menos um animal ativo e um veterinário.'));return;}
- const split=node('div',null,'split');const now=new Date(),date=new Date(now-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
- for(const [tab,title,spec] of [['consultas','Nova consulta',[['descricao','Descrição','area']]],['vacinas','Nova vacina',[['nome','Nome da vacina'],['lote','Lote'],['antirrabica','Enviar como antirrábica ao governo simulado','check']]]]){const f=node('form',null,'mini');f.append(node('h2',title));for(const row of [['animal_id','Animal','animals'],['veterinario_id','Veterinário','vets'],['data','Data','date'],...spec])f.append(makeField(row,row[0]==='data'?date:null,{animals:animals.filter(x=>x.ativo),vets}));f.elements.data.required=true;f.elements.data.max=date;const b=node('button','Registrar');b.type='submit';f.append(b);formAction(f,async()=>{const r=await api('/'+tab,'POST',dataFrom(f));f.reset();f.elements.data.value=date;msg(`Registro #${r.id} salvo. Veja em Animais → Histórico.`);});split.append(f);}screen.append(split);}
-async function integracao(version=++epoch){const ops=await api('/integracao');if(version!==epoch)return;start('Integração governamental','Confira as tentativas de envio e os protocolos retornados pelo governo simulado.');const bar=node('div',null,'toolbar');bar.append(btn('Atualizar lista',()=>integracao()));if(profile.papel==='admin'){bar.append(btn('Simular indisponibilidade',async()=>{await api('/integracao/simulacao?indisponivel=true','PUT');msg('Governo simulado fora do ar. Salve um animal ou vacina para demonstrar.');},'danger'),btn('Restaurar serviço',async()=>{await api('/integracao/simulacao?indisponivel=false','PUT');msg('Serviço restaurado. Clique em Reenviar pendências.');}),btn('Reenviar pendências',async()=>{const r=await api('/integracao/reenviar','POST');await integracao();msg(`${r.enviadas} operação(ões) enviada(s); ${r.animais_com_falha} animal(is) ainda com falha.`);},''));}screen.append(bar,table(ops,['id','animal','tipo','status','tentativas','protocolo','erro','atualizado']));}
+document.querySelectorAll('#authTabs button').forEach(b => b.addEventListener('click', () => trocarForm(b.dataset.f)));
+function showLogin() {
+  epoch++; token = '';
+  $('#login').hidden = false; $('#workspace').hidden = true; $('#logout').hidden = true;
+  $('#who').textContent = 'Ambiente de demonstração'; trocarForm('loginForm');
+}
+function enviar(form, fn) {
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault(); const b = form.querySelector('button'); b.disabled = true;
+    try { await fn(Object.fromEntries(new FormData(form))); } catch (x) { erro(x); } finally { b.disabled = false; }
+  });
+}
+enviar($('#loginForm'), async (d) => {
+  const p = await api('/auth/login', 'POST', d); token = p.access_token; msg('');
+  $('#loginForm').reset(); $('#login').hidden = true; $('#workspace').hidden = false; $('#logout').hidden = false;
+  $('#who').textContent = p.nome; await go('Animais');
+});
+enviar($('#registroForm'), async (d) => {
+  if (!d.telefone) delete d.telefone;
+  const r = await api('/auth/registro', 'POST', d);
+  $('#registroForm').reset(); $('#confirmaForm').email.value = d.email; trocarForm('confirmaForm');
+  msg(r.mensagem + (r.codigo_confirmacao_simulado ? ` [E-mail simulado] Seu código: ${r.codigo_confirmacao_simulado}` : ''));
+});
+enviar($('#confirmaForm'), async (d) => { const r = await api('/auth/confirmar', 'POST', d); $('#confirmaForm').reset(); trocarForm('loginForm'); msg(r.mensagem); });
+$('#reenviar').addEventListener('click', async () => {
+  try {
+    const email = $('#confirmaForm').email.value; if (!email) throw Error('Informe o e-mail.');
+    const r = await api('/auth/reenviar-codigo', 'POST', { email });
+    msg(r.mensagem + (r.codigo_confirmacao_simulado ? ` [E-mail simulado] Novo código: ${r.codigo_confirmacao_simulado}` : ''));
+  } catch (e) { erro(e); }
+});
+$('#logout').addEventListener('click', async () => { try { await api('/auth/logout', 'POST'); } catch (e) { /* encerra localmente */ } showLogin(); msg('Sessão encerrada.'); });
+
+// ------------------------------------------------------------------ componentes
+function start(title, description) {
+  screen.replaceChildren(); const h = node('h1', title); h.id = 'title'; screen.append(h);
+  if (description) screen.append(node('p', description, 'muted'));
+}
+function celula(td, k, v) {
+  if (v == null || v === '') td.textContent = '—';
+  else if (k === 'tipo') td.textContent = TIPOS[v] || v;
+  else if (typeof v === 'boolean' || k === 'senha_confirmada') td.textContent = v ? 'Sim' : 'Não';
+  else if (['situacao', 'integracao'].includes(k)) td.append(node('span', v.replace('_', ' '), 'tag ' + (CLASSE[v] || '')));
+  else td.textContent = v;
+}
+function table(rows, keys, action) {
+  if (!rows.length) return node('p', 'Nenhum registro encontrado.', 'muted');
+  const box = node('div', null, 'tablebox'), t = node('table'), hd = node('thead'), tr = node('tr'), body = node('tbody');
+  keys.forEach(k => { const th = node('th', ROTULOS[k] || k); th.scope = 'col'; tr.append(th); });
+  if (action) tr.append(node('th', 'Ações'));
+  hd.append(tr); t.append(hd, body);
+  for (const r of rows) {
+    const row = node('tr');
+    for (const k of keys) { const td = node('td'); celula(td, k, r[k]); row.append(td); }
+    if (action) { const td = node('td'); td.append(action(r)); row.append(td); }
+    body.append(row);
+  }
+  box.append(t); return box;
+}
+// Formulário genérico. campo = [nome, rótulo, tipo, opções]; tipo: text|date|number|datetime|textarea|checkbox|select
+async function formulario(campos, valores, ao_salvar, ao_cancelar, rotuloSalvar = 'Salvar') {
+  const f = node('form'), g = node('div', null, 'grid');
+  for (const [nome, rotulo, tipo = 'text', extra] of campos) {
+    const l = node('label', rotulo); let i;
+    if (tipo === 'select') {
+      i = node('select'); i.append(new Option('— selecione —', ''));
+      for (const o of extra) i.append(new Option(o[1], o[0]));
+    } else if (tipo === 'textarea') i = node('textarea');
+    else { i = node('input'); i.type = tipo === 'datetime' ? 'datetime-local' : tipo; if (tipo === 'number') i.step = 'any'; }
+    i.name = nome;
+    const v = valores?.[nome];
+    if (tipo === 'checkbox') i.checked = !!v; else if (v != null) i.value = tipo === 'datetime' ? String(v).slice(0, 16) : v;
+    l.append(i); g.append(l);
+  }
+  const acoes = node('div', null, 'toolbar'), ok = node('button', rotuloSalvar); acoes.append(ok);
+  if (ao_cancelar) acoes.append(btn('Cancelar', ao_cancelar));
+  f.append(g, acoes);
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault(); ok.disabled = true;
+    const d = {};
+    for (const [nome, , tipo] of campos) {
+      const el = f.elements[nome];
+      if (tipo === 'checkbox') d[nome] = el.checked;
+      else if (el.value === '') d[nome] = null;
+      else if (tipo === 'number' || (tipo === 'select' && /^\d+$/.test(el.value))) d[nome] = Number(el.value);
+      else d[nome] = el.value;
+    }
+    try { await ao_salvar(d); } catch (x) { erro(x); } finally { ok.disabled = false; }
+  });
+  return f;
+}
+const opcoes = async (tab, rotulo) => (await api('/' + tab)).filter(x => x.situacao !== 'INATIVO').map(x => [x.id, rotulo(x)]);
+
+// ------------------------------------------------------------------ navegação
+async function go(s) {
+  const v = ++epoch; msg(''); const nav = $('#nav'); nav.replaceChildren();
+  for (const a of ['Animais', 'Cadastros', 'Atendimentos', 'Integração']) {
+    const b = btn(a, () => go(a)); if (a === s) b.setAttribute('aria-current', 'page'); nav.append(b);
+  }
+  start(s, 'Carregando…');
+  if (s === 'Animais') return listaAnimais('', v);
+  if (s === 'Cadastros') return cadastros('tutores', v);
+  if (s === 'Atendimentos') return atendimentos(v);
+  return integracao(v);
+}
+
+// ------------------------------------------------------------------ animais
+async function listaAnimais(q = '', v = ++epoch) {
+  const rows = await api('/animais?q=' + encodeURIComponent(q)); if (v !== epoch) return;
+  start('Animais', 'Cadastre animais com microchip e consulte o histórico clínico e a situação no governo.');
+  const bar = node('div', null, 'toolbar');
+  bar.append(btn('Novo animal', () => formAnimal(null), ''));
+  const l = node('label', 'Nome ou microchip'), i = node('input'); i.value = q; i.maxLength = 100; l.append(i);
+  i.addEventListener('keydown', e => { if (e.key === 'Enter') listaAnimais(i.value).catch(erro); });
+  bar.append(l, btn('Buscar', () => listaAnimais(i.value)));
+  screen.append(bar, table(rows, ['id', 'nome', 'tutor', 'especie', 'raca', 'microchip', 'situacao', 'integracao'], (r) => {
+    const s = node('div', null, 'toolbar');
+    s.append(btn('Histórico', () => historico(r.id)), btn('Editar', () => formAnimal(r)));
+    if (r.situacao === 'ATIVO') s.append(btn('Inativar', async () => { await api('/animais/' + r.id, 'DELETE'); await listaAnimais(q); }, 'danger'));
+    return s;
+  }));
+}
+async function formAnimal(a) {
+  const [tutores, especies, racas] = await Promise.all([opcoes('tutores', t => `${t.nome} (${t.cpf})`), opcoes('especies', e => e.nome), api('/racas')]);
+  start(a ? 'Editar animal' : 'Novo animal', 'Informe a data de nascimento ou a idade estimada. A raça deve ser da espécie escolhida (ou deixe "sem raça").');
+  const campos = [['nome', 'Nome'], ['nascimento', 'Nascimento', 'date'], ['idade_estimada_meses', 'Idade estimada (meses)', 'number'],
+    ['sexo', 'Sexo', 'select', [['M', 'Macho'], ['F', 'Fêmea']]], ['cor', 'Cor'], ['peso_atual', 'Peso atual (kg)', 'number'],
+    ['tutor_id', 'Tutor', 'select', tutores], ['especie_id', 'Espécie', 'select', especies],
+    ['raca_id', 'Raça (opcional)', 'select', racas.filter(r => r.situacao === 'ATIVO').map(r => [r.id, `${r.nome} — ${r.especie}`])]];
+  if (a) campos.push(['situacao', 'Situação', 'select', [['ATIVO', 'Ativo'], ['INATIVO', 'Inativo'], ['OBITO', 'Óbito']]]);
+  else campos.push(['microchip', 'Microchip (15 dígitos, opcional)']);
+  screen.append(await formulario(campos, a, async (d) => {
+    if (a) { await api('/animais/' + a.id, 'PUT', d); msg('Animal atualizado.'); } else { const r = await api('/animais', 'POST', d); msg('Animal cadastrado.'); a = r; }
+    await listaAnimais();
+  }, () => listaAnimais()));
+}
+async function historico(id) {
+  const [h, ops] = await Promise.all([api(`/animais/${id}/historico`), api('/integracao?animal_id=' + id)]);
+  const an = h.animal; start(`Animal: ${an.nome}`, `${an.especie}${an.raca ? ' • ' + an.raca : ' • sem raça'} • tutor ${an.tutor} • microchip ativo: ${an.microchip || 'nenhum'}`);
+  screen.append(node('p', 'Situação no governo: '), (() => { const s = node('span', an.integracao.replace('_', ' '), 'tag ' + (CLASSE[an.integracao] || '')); return s; })());
+  const bar = node('div', null, 'toolbar'); bar.append(btn('Voltar', () => listaAnimais()));
+  screen.append(bar);
+  screen.append(node('h3', an.microchip ? 'Substituir microchip' : 'Vincular microchip'));
+  screen.append(await formulario([['codigo', 'Novo microchip (15 dígitos)'], ['motivo', 'Motivo']], null, async (d) => {
+    await api(`/animais/${id}/microchip`, 'POST', d); msg('Microchip vinculado. O anterior foi mantido no histórico.'); await historico(id);
+  }, null, an.microchip ? 'Substituir' : 'Vincular'));
+  screen.append(node('h3', 'Histórico de microchips'), table(h.microchips, ['codigo', 'situacao', 'data_vinculo', 'veterinario', 'motivo_substituicao']));
+  screen.append(node('h3', 'Consultas'), table(h.consultas, ['data_hora', 'motivo', 'diagnostico', 'veterinario', 'situacao'], (r) => {
+    const s = node('div', null, 'toolbar');
+    if (r.situacao === 'AGENDADA') for (const x of [['Realizada', 'REALIZADA'], ['Cancelar', 'CANCELADA'], ['Não compareceu', 'NAO_COMPARECEU']])
+      s.append(btn(x[0], async () => { await api(`/consultas/${r.id}/situacao`, 'PUT', { situacao: x[1] }); await historico(id); }));
+    return s;
+  }));
+  screen.append(node('h3', 'Vacinas'), table(h.vacinas.map(v => ({ ...v, antirrabica: v.antirrabica ? 'Sim' : 'Não' })),
+    ['nome', 'tipo', 'antirrabica', 'fabricante', 'lote', 'data_aplicacao', 'dose_etapa', 'data_proxima_dose', 'situacao'], (r) => {
+      const s = node('div', null, 'toolbar');
+      if (r.situacao === 'AGENDADA') s.append(btn('Aplicar', async () => { await api(`/vacinas/${r.id}/situacao`, 'PUT', { situacao: 'APLICADA' }); await historico(id); }),
+        btn('Cancelar', async () => { await api(`/vacinas/${r.id}/situacao`, 'PUT', { situacao: 'CANCELADA' }); await historico(id); }, 'danger'));
+      return s;
+    }));
+  screen.append(node('h3', 'Comunicações com o governo'), table(ops, ['tipo', 'situacao', 'tentativas', 'protocolo_externo', 'mensagem_erro', 'data_solicitacao']));
+}
+
+// ------------------------------------------------------------------ cadastros
+const CAD = {
+  tutores: { titulo: 'Tutores', cols: ['id', 'nome', 'cpf', 'email', 'telefone', 'endereco', 'situacao'] },
+  enderecos: { titulo: 'Endereços', cols: ['id', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf', 'codigo_ibge'] },
+  especies: { titulo: 'Espécies', cols: ['id', 'nome', 'descricao', 'situacao'] },
+  racas: { titulo: 'Raças', cols: ['id', 'nome', 'especie', 'situacao'] },
+  veterinarios: { titulo: 'Veterinários', cols: ['id', 'nome', 'cpf', 'crmv', 'email', 'senha_confirmada', 'situacao', 'ultimo_acesso'] }
+};
+async function cadastros(tab, v = ++epoch) {
+  const rows = await api('/' + tab); if (v !== epoch) return;
+  start('Cadastros', tab === 'enderecos' ? 'Cada CEP é guardado uma só vez; endereços iguais são reaproveitados (não há edição nem exclusão).' : 'Exclusão é lógica: o cadastro fica INATIVO e o histórico é preservado.');
+  const sub = node('div', null, 'toolbar');
+  for (const k of Object.keys(CAD)) { const b = btn(CAD[k].titulo, () => cadastros(k)); if (k === tab) b.setAttribute('aria-current', 'page'); sub.append(b); }
+  screen.append(sub, (() => { const b = node('div', null, 'toolbar'); b.append(btn('Novo cadastro', () => formCadastro(tab, null), '')); return b; })());
+  screen.append(table(rows, CAD[tab].cols, tab === 'enderecos' ? null : (r) => {
+    const s = node('div', null, 'toolbar'); s.append(btn('Editar', () => formCadastro(tab, r)));
+    if (r.situacao === 'ATIVO') s.append(btn('Inativar', async () => { await api(`/${tab}/${r.id}`, 'DELETE'); await cadastros(tab); }, 'danger'));
+    return s;
+  }));
+}
+async function formCadastro(tab, r) {
+  start((r ? 'Editar ' : 'Novo ') + CAD[tab].titulo.toLowerCase());
+  const volta = () => cadastros(tab);
+  let campos;
+  if (tab === 'tutores') {
+    const ends = (await api('/enderecos')).map(e => [e.id, `${e.logradouro}, ${e.numero}${e.complemento ? ' ' + e.complemento : ''} — ${e.cidade}/${e.uf} (${e.cep})`]);
+    campos = [['nome', 'Nome'], ['cpf', 'CPF'], ['data_nascimento', 'Data de nascimento', 'date'], ['email', 'E-mail', 'email'], ['telefone', 'Telefone'], ['endereco_id', 'Endereço', 'select', ends]];
+    if (r) campos.push(['situacao', 'Situação', 'select', [['ATIVO', 'Ativo'], ['INATIVO', 'Inativo']]]);
+    screen.append(node('p', 'Não achou o endereço? Cadastre-o primeiro em Cadastros › Endereços (o CEP é preenchido pelo ViaCEP).', 'muted'));
+  } else if (tab === 'enderecos') return formEndereco();
+  else if (tab === 'especies') campos = [['nome', 'Nome'], ['descricao', 'Descrição', 'textarea']];
+  else if (tab === 'racas') campos = [['nome', 'Nome'], ['descricao', 'Descrição', 'textarea'], ['especie_id', 'Espécie', 'select', await opcoes('especies', e => e.nome)]];
+  else {
+    campos = [['nome', 'Nome'], ['cpf', 'CPF'], ['crmv_numero', 'CRMV (número)'], ['crmv_uf', 'UF do CRMV'], ['email', 'E-mail', 'email'], ['telefone', 'Telefone']];
+    if (r) campos.push(['situacao', 'Situação', 'select', [['ATIVO', 'Ativo'], ['INATIVO', 'Inativo']]]);
+    else campos.push(['senha', 'Senha inicial (mín. 8)', 'password']);
+  }
+  if (tab === 'veterinarios' && !r) {
+    screen.append(node('p', 'O novo veterinário só entra depois de confirmar a senha com o código enviado ao e-mail (simulado).', 'muted'));
+  }
+  const dados = r ? { ...r, crmv_numero: r.crmv_numero, crmv_uf: r.crmv_uf } : null;
+  screen.append(await formulario(campos, dados, async (d) => {
+    if (r) await api(`/${tab}/${r.id}`, 'PUT', d);
+    else if (tab === 'veterinarios') { const x = await api('/auth/registro', 'POST', d); msg(x.mensagem + (x.codigo_confirmacao_simulado ? ` Código (simulado): ${x.codigo_confirmacao_simulado}` : '')); await volta(); return; }
+    else await api('/' + tab, 'POST', d);
+    msg('Salvo com sucesso.'); await volta();
+  }, volta));
+}
+async function formEndereco() {
+  start('Novo endereço', 'Digite o CEP e use "Buscar no ViaCEP". Se o ViaCEP estiver fora do ar ou o CEP não existir, preencha manualmente.');
+  const campos = [['cep', 'CEP'], ['numero', 'Número'], ['complemento', 'Complemento'], ['logradouro', 'Logradouro'], ['bairro', 'Bairro'], ['cidade', 'Cidade'], ['uf', 'UF'], ['codigo_ibge', 'Código IBGE']];
+  const f = await formulario(campos, null, async (d) => {
+    const r = await api('/enderecos', 'POST', d);
+    msg(r.reaproveitado ? 'Este endereço já existia: foi reaproveitado, sem duplicar.' : 'Endereço cadastrado.'); await cadastros('enderecos');
+  }, () => cadastros('enderecos'));
+  const busca = btn('Buscar no ViaCEP', async () => {
+    const cep = f.elements.cep.value.trim(); if (!cep) throw Error('Informe o CEP.');
+    const r = await api('/cep/' + encodeURIComponent(cep));
+    for (const k of ['logradouro', 'bairro', 'cidade', 'uf', 'codigo_ibge']) f.elements[k].value = r[k] || '';
+    msg('Endereço preenchido pelo ViaCEP. Complete o número.');
+  });
+  f.querySelector('.toolbar').prepend(busca);
+  screen.append(f);
+}
+
+// ------------------------------------------------------------------ atendimentos
+async function atendimentos(v = ++epoch) {
+  const animais = (await api('/animais')).filter(a => a.situacao === 'ATIVO'); if (v !== epoch) return;
+  const prox = await api('/vacinas/proximas-doses'); if (v !== epoch) return;
+  start('Atendimentos', 'Registre consultas e vacinas. O veterinário responsável é quem está logado.');
+  const sel = animais.map(a => [a.id, `${a.nome} — ${a.tutor}`]);
+  screen.append(node('h3', 'Nova consulta'), await formulario([
+    ['animal_id', 'Animal', 'select', sel], ['data_hora', 'Data e hora', 'datetime'], ['motivo', 'Motivo'], ['anamnese', 'Anamnese', 'textarea'],
+    ['sintomas', 'Sintomas', 'textarea'], ['diagnostico', 'Diagnóstico', 'textarea'], ['tratamento', 'Tratamento', 'textarea'],
+    ['prescricao', 'Prescrição', 'textarea'], ['peso_registrado', 'Peso (kg)', 'number'], ['temperatura', 'Temperatura (°C)', 'number'],
+    ['observacoes', 'Observações', 'textarea'],
+    ['situacao', 'Situação', 'select', [['REALIZADA', 'Realizada'], ['AGENDADA', 'Agendada'], ['CANCELADA', 'Cancelada'], ['NAO_COMPARECEU', 'Não compareceu']]]
+  ], { situacao: 'REALIZADA' }, async (d) => { await api('/consultas', 'POST', d); msg('Consulta registrada.'); await atendimentos(); }, null, 'Registrar consulta'));
+  screen.append(node('h3', 'Nova vacina'), await formulario([
+    ['animal_id', 'Animal', 'select', sel], ['nome', 'Vacina'], ['tipo', 'Tipo (ex.: Raiva, Múltipla)'], ['antirrabica', 'É antirrábica (envio obrigatório ao governo)', 'checkbox'],
+    ['fabricante', 'Fabricante'], ['lote', 'Lote'], ['validade_lote', 'Validade do lote', 'date'], ['data_aplicacao', 'Data de aplicação/agendamento', 'date'],
+    ['dose_etapa', 'Dose'], ['via_aplicacao', 'Via de aplicação'], ['data_proxima_dose', 'Próxima dose', 'date'], ['observacoes', 'Observações', 'textarea'],
+    ['situacao', 'Situação', 'select', [['APLICADA', 'Aplicada'], ['AGENDADA', 'Agendada'], ['CANCELADA', 'Cancelada']]]
+  ], { situacao: 'APLICADA' }, async (d) => {
+    await api('/vacinas', 'POST', d); msg(d.antirrabica && d.situacao === 'APLICADA' ? 'Vacina registrada. O envio ao governo foi iniciado; veja o status em Integração.' : 'Vacina registrada.'); await atendimentos();
+  }, null, 'Registrar vacina'));
+  screen.append(node('h3', 'Próximas doses'), table(prox, ['animal', 'vacina', 'dose_etapa', 'data_proxima_dose', 'dias_restantes']));
+}
+
+// ------------------------------------------------------------------ integração
+async function integracao(v = ++epoch) {
+  const ops = await api('/integracao'); if (v !== epoch) return;
+  start('Integração com o governo', 'Registro local e confirmação governamental são coisas diferentes: PENDENTE (governo fora do ar), ENVIADA (resposta inconclusiva), CONFIRMADA (com protocolo) e FALHA (recusada).');
+  const bar = node('div', null, 'toolbar');
+  bar.append(btn('Reenviar pendências', async () => { const r = await api('/integracao/reenviar', 'POST'); msg(`Confirmadas: ${r.confirmadas} • pendentes: ${r.pendentes} • falhas: ${r.falhas}`); await integracao(); }, ''),
+    btn('Simular governo fora do ar', async () => { await api('/integracao/simulacao?indisponivel=true', 'PUT'); msg('Governo simulado: INDISPONÍVEL.'); }),
+    btn('Restabelecer governo', async () => { await api('/integracao/simulacao?indisponivel=false', 'PUT'); msg('Governo simulado: DISPONÍVEL.'); }),
+    btn('Atualizar', () => integracao()));
+  screen.append(bar, table(ops, ['id', 'animal', 'tipo', 'situacao', 'tentativas', 'protocolo_externo', 'mensagem_erro', 'data_solicitacao']));
+}
+
+showLogin();
